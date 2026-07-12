@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+SQLAlchemy
+psycopg2-binary
+pgvector
+python-multipart
+javalang
+pydantic
+pydantic-settings
+sentence-transformers==3.1.1
