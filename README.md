@@ -7,7 +7,7 @@ A robust, AI-powered tool for deep code analysis, real-time feedback, and securi
 *   **Multi-language Support**: Analyzes Python and Java code submissions.
 *   **Dual Submission Methods**: Supports both direct code pasting and file uploads.
 *   **Syntax & Structural Validation**: Uses AST (Python) and javalang (Java) with heuristic fallbacks to ensure code correctness before deeper analysis.
-*   **Security Vulnerability Detection**: Leverages a semantic RAG pipeline powered by `all-MiniLM-L6-v2` and `pgvector` to identify and provide context on security flaws (OWASP Top 10, CWEs).
+*   **Security Vulnerability Detection**: Leverages a semantic RAG pipeline powered by `all-MiniLM-L6-v2` and `pgvector`, enhanced with a **Cross-Encoder re-ranker** (`ms-marco-MiniLM-L-6-v2`) and **recursive text chunking** to identify and provide high-quality context on security flaws (OWASP Top 10, CWEs).
 *   **Real-time Feedback UI**: A sleek, reactive frontend built with React, Vite, and Monaco Editor featuring interactive code scanning, history tracking, and detailed error cards.
 
 ## 🏗 Architecture
@@ -18,8 +18,8 @@ The system is broken down into three main modules:
 2.  **Code Submission & Validation (FastAPI)**: Handles incoming code, performs initial parsing, and persists results to PostgreSQL.
 3.  **RAG Pipeline**:
     *   **Vector DB**: Uses PostgreSQL with the `pgvector` extension.
-    *   **Embeddings**: Powered by HuggingFace's sentence-transformers (`all-MiniLM-L6-v2`).
-    *   **Knowledge Base**: Contains markdown files detailing secure coding practices and common vulnerabilities.
+    *   **Embeddings & Re-ranking**: Powered by HuggingFace's sentence-transformers (`all-MiniLM-L6-v2` for fast vector search, and `cross-encoder/ms-marco-MiniLM-L-6-v2` for accurate re-ranking).
+    *   **Knowledge Base**: Contains markdown files detailing secure coding practices and common vulnerabilities, split using recursive paragraph and sentence chunking.
 
 ### Component Diagram
 
@@ -37,10 +37,10 @@ graph TD
 
     subgraph "RAG Pipeline Module"
         Ingest[Ingestion Script]
-        Ingest --> Chunk[Chunker]
+        Ingest --> Chunk[Recursive Chunker]
         Chunk --> Embed[Embedding Model]
         Embed --> PG[(pgvector)]
-        Retrieve[Retrieve Function]
+        Retrieve[Retrieve & Re-rank Function]
         PG --> Retrieve
     end
 

@@ -204,16 +204,84 @@ def validate_java_code(code: str) -> tuple:
     return _validate_java_with_javalang(code)
 
 
+def scan_security_vulnerabilities(code: str, language: str) -> list[dict]:
+    vulns = []
+    lines = code.splitlines()
+    
+    if language == "python":
+        for i, line in enumerate(lines, start=1):
+            if re.search(r'(?i)\b(password|secret|api_key|token)\s*=\s*["\'][^"\']+["\']', line):
+                vulns.append({
+                    "line": i, "column": None, "severity": "vulnerability",
+                    "issue": "[Hardcoded Secret] Hardcoded Secret/Password Detected",
+                    "fix": "Do not hardcode secrets. Use environment variables (e.g., os.getenv()) or a secrets manager.",
+                    "snippet": line.strip(),
+                    "owasp_id": "A07:2021", "cwe_id": "CWE-798"
+                })
+            if re.search(r'\.execute\s*\(\s*f["\']', line) or re.search(r'\.execute\s*\([^,]+%', line) or re.search(r'\.execute\s*\([^,]+\.format', line):
+                vulns.append({
+                    "line": i, "column": None, "severity": "vulnerability",
+                    "issue": "[SQL Injection] Vulnerable Database Query Detected",
+                    "fix": "Use parameterized queries instead of string formatting or concatenation.",
+                    "snippet": line.strip(),
+                    "owasp_id": "A03:2021", "cwe_id": "CWE-89"
+                })
+            if re.search(r'os\.system\s*\(', line) or re.search(r'subprocess\.(run|Popen|call)\s*\([^)]*shell\s*=\s*True', line):
+                vulns.append({
+                    "line": i, "column": None, "severity": "vulnerability",
+                    "issue": "[Command Injection] OS Command Injection Risk",
+                    "fix": "Avoid executing OS commands with shell=True or os.system. Use subprocess with a list of arguments.",
+                    "snippet": line.strip(),
+                    "owasp_id": "A03:2021", "cwe_id": "CWE-78"
+                })
+    elif language == "java":
+        for i, line in enumerate(lines, start=1):
+            if re.search(r'(?i)(String\s+)?(password|secret|api_key|token)\s*=\s*["\'][^"\']+["\']', line):
+                vulns.append({
+                    "line": i, "column": None, "severity": "vulnerability",
+                    "issue": "[Hardcoded Secret] Hardcoded Secret/Password Detected",
+                    "fix": "Do not hardcode secrets. Externalize credentials via environment variables or secure vaults.",
+                    "snippet": line.strip(),
+                    "owasp_id": "A07:2021", "cwe_id": "CWE-798"
+                })
+            if re.search(r'(executeQuery|execute|executeUpdate)\s*\([^")]*\+', line) or re.search(r'(?i)select.*from.*\+', line):
+                vulns.append({
+                    "line": i, "column": None, "severity": "vulnerability",
+                    "issue": "[SQL Injection] Vulnerable Database Query Detected",
+                    "fix": "Use PreparedStatement with bound parameters (?) instead of concatenating strings.",
+                    "snippet": line.strip(),
+                    "owasp_id": "A03:2021", "cwe_id": "CWE-89"
+                })
+            if re.search(r'Runtime\.getRuntime\(\)\.exec\s*\(', line):
+                vulns.append({
+                    "line": i, "column": None, "severity": "vulnerability",
+                    "issue": "[Command Injection] Runtime.exec() Command Injection Risk",
+                    "fix": "Avoid Runtime.exec(). Use ProcessBuilder with a list of arguments instead.",
+                    "snippet": line.strip(),
+                    "owasp_id": "A03:2021", "cwe_id": "CWE-78"
+                })
+                
+    return vulns
+
+
 def validate_code(code: str, language: str) -> tuple:
     """
     Returns (is_valid, raw_message, structured_errors).
-    structured_errors is a list of dicts: {line, column, severity, issue, fix, snippet}
+    structured_errors is a list of dicts: {line, column, severity, issue, fix, snippet, owasp_id, cwe_id}
     """
     lang = language.lower()
     if lang == "python":
-        return validate_python_code(code)
+        is_valid, msg, errors = validate_python_code(code)
     elif lang == "java":
-        return validate_java_code(code)
+        is_valid, msg, errors = validate_java_code(code)
     else:
         msg = f"Unsupported language: {language}"
         return False, msg, [{"line": None, "column": None, "severity": "error", "issue": msg, "fix": "Choose 'python' or 'java'.", "snippet": ""}]
+        
+    vulns = scan_security_vulnerabilities(code, lang)
+    if vulns:
+        errors.extend(vulns)
+        is_valid = False
+        msg = f"Detected {len(vulns)} security vulnerabilities" if not msg else msg + f" and {len(vulns)} security vulnerabilities."
+        
+    return is_valid, msg, errors

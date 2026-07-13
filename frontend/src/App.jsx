@@ -34,17 +34,26 @@ function SecurityAdviceCard({ advice, index }) {
 /* ─── Collapsible error card ─── */
 function ErrorCard({ error, index }) {
   const [open, setOpen] = useState(true)
+  const isVuln = error.severity === 'vulnerability'
   return (
-    <div className="ec">
+    <div className={`ec ${isVuln ? 'ec-vuln' : ''}`}>
       <button className="ec-hd" onClick={() => setOpen(v => !v)}>
         <div className="ec-hd-l">
-          <span className="ec-bug">🐛</span>
+          <span className="ec-bug">{isVuln ? '🔓' : '🐛'}</span>
           <div className="ec-meta">
-            {error.line != null && (
-              <span className="ec-ltag">
-                Line {error.line}{error.column != null ? ` · Col ${error.column}` : ''}
-              </span>
-            )}
+            <div style={{display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap'}}>
+              {error.line != null && (
+                <span className="ec-ltag">
+                  Line {error.line}{error.column != null ? ` · Col ${error.column}` : ''}
+                </span>
+              )}
+              {isVuln && (
+                <>
+                  {error.owasp_id && <span className="sa-badge sa-owasp">{error.owasp_id}</span>}
+                  {error.cwe_id   && <span className="sa-badge sa-cwe">{error.cwe_id}</span>}
+                </>
+              )}
+            </div>
             <span className="ec-issue">{error.issue}</span>
           </div>
         </div>
@@ -121,6 +130,7 @@ function HistoryItem({ item, index }) {
 
 /* ─── Main App ─── */
 export default function App() {
+  const [view,    setView]    = useState('scanner')
   const [tab,     setTab]     = useState('paste')
   const [code,    setCode]    = useState('')
   const [lang,    setLang]    = useState('python')
@@ -198,13 +208,13 @@ export default function App() {
           </div>
         </div>
         <nav className="hdr-pills">
-          <span className="hdr-pill">🛡 Security</span>
-          <span className="hdr-pill">⚡ Instant</span>
-          <span className="hdr-pill">🔬 Precise</span>
+          <button className={`hdr-pill ${view === 'scanner' ? 'hdr-pill-active' : ''}`} onClick={() => setView('scanner')} style={{cursor: 'pointer', border: 'none', background: view === 'scanner' ? 'rgba(14, 165, 233, 0.2)' : 'rgba(255, 255, 255, 0.05)', color: view === 'scanner' ? 'var(--primary)' : 'var(--txt-muted)'}}>🛡 Scanner</button>
+          <button className={`hdr-pill ${view === 'history' ? 'hdr-pill-active' : ''}`} onClick={() => setView('history')} style={{cursor: 'pointer', border: 'none', background: view === 'history' ? 'rgba(14, 165, 233, 0.2)' : 'rgba(255, 255, 255, 0.05)', color: view === 'history' ? 'var(--primary)' : 'var(--txt-muted)'}}>🕑 History</button>
         </nav>
       </header>
 
-      {/* ══ MAIN GRID ══ */}
+      {/* ══ MAIN VIEW ══ */}
+      {view === 'scanner' ? (
       <main className="app-grid">
 
         {/* LEFT: Editor panel */}
@@ -342,9 +352,8 @@ export default function App() {
         </section>
 
       </main>
-
-      {/* ══ HISTORY PANEL ══ */}
-      <section className="hist-section">
+      ) : (
+      <section className="hist-section" style={{maxWidth: '800px', margin: '0 auto', marginTop: '32px'}}>
         <div className="hist-hd">
           <div className="hist-hd-l">
             <span className="hist-icon">🕑</span>
@@ -369,6 +378,7 @@ export default function App() {
           )}
         </div>
       </section>
+      )}
     </>
   )
 }
