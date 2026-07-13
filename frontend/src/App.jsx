@@ -65,100 +65,7 @@ function ScanBeam({ active }) {
   )
 }
 
-/* ─── Canvas-based fireworks bursts ─── */
-function FireworksCanvas() {
-  const cvs = useRef(null)
-  useEffect(() => {
-    const canvas = cvs.current
-    if (!canvas) return
-    const ctx = canvas.getContext('2d')
-    const W = canvas.width  = window.innerWidth
-    const H = canvas.height = window.innerHeight
-    const COLS = ['#22d3ee', '#a78bfa', '#4ade80', '#fbbf24', '#f472b6', '#ffffff', '#fb923c']
 
-    class Spark {
-      constructor(x, y, col) {
-        this.x = x; this.y = y; this.col = col
-        const a = Math.random() * Math.PI * 2
-        const s = 2.5 + Math.random() * 5.5
-        this.vx = Math.cos(a) * s; this.vy = Math.sin(a) * s - 1
-        this.al = 1; this.r = 1.5 + Math.random() * 2.5
-        this.dec = 0.011 + Math.random() * 0.009
-      }
-      tick() {
-        this.x += this.vx; this.y += this.vy
-        this.vy += 0.065; this.vx *= 0.99; this.al -= this.dec
-      }
-      draw() {
-        ctx.beginPath()
-        ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2)
-        ctx.fillStyle = this.col
-        ctx.globalAlpha = Math.max(0, this.al)
-        ctx.shadowBlur = 10; ctx.shadowColor = this.col
-        ctx.fill(); ctx.shadowBlur = 0
-      }
-    }
-
-    let sparks = []
-    const burst = () => {
-      const x = 80 + Math.random() * (W - 160)
-      const y = 60 + Math.random() * (H * 0.52)
-      const c = COLS[Math.floor(Math.random() * COLS.length)]
-      for (let i = 0; i < 80 + Math.floor(Math.random() * 40); i++)
-        sparks.push(new Spark(x, y, c))
-    }
-
-    burst(); burst(); burst()
-    const ts = [350, 750, 1100, 1550, 1950, 2400, 2900].map((d, i) =>
-      setTimeout(() => { burst(); if (i % 2 === 0) burst() }, d)
-    )
-
-    let raf
-    const draw = () => {
-      ctx.fillStyle = 'rgba(0,0,0,0.13)'; ctx.fillRect(0, 0, W, H)
-      sparks = sparks.filter(s => s.al > 0)
-      sparks.forEach(s => { s.tick(); s.draw() })
-      ctx.globalAlpha = 1
-      raf = requestAnimationFrame(draw)
-    }
-    draw()
-    return () => { cancelAnimationFrame(raf); ts.forEach(clearTimeout) }
-  }, [])
-  return <canvas ref={cvs} className="fw-canvas" />
-}
-
-/* ─── Full-screen success celebration ─── */
-function SuccessOverlay({ onDismiss }) {
-  return (
-    <div className="sov" onClick={onDismiss}>
-      <FireworksCanvas />
-      <div className="sov-card" onClick={e => e.stopPropagation()}>
-        <div className="trophy-box">
-          <div className="trophy-ring-bg" />
-          <div className="trophy-emoji">🏆</div>
-          <div className="sparkle-ring">
-            {Array.from({ length: 8 }, (_, i) => (
-              <div key={i} className="sdot" style={{ '--si': i }} />
-            ))}
-          </div>
-        </div>
-        <h2 className="sov-title">Code Looks <span>Perfect!</span></h2>
-        <p className="sov-sub">Zero issues detected · All validation checks passed ✓</p>
-        <div className="sov-checks">
-          {['Syntax', 'Symbols', 'Structure', 'Types'].map(label => (
-            <div key={label} className="sov-chk">
-              <span className="schk-ico">✓</span>
-              <span className="schk-lbl">{label}</span>
-            </div>
-          ))}
-        </div>
-        <button className="btn-dismiss" onClick={onDismiss}>
-          Continue Coding <span>→</span>
-        </button>
-      </div>
-    </div>
-  )
-}
 
 /* ─── Security Advice Card (from RAG KB) ─── */
 function SecurityAdviceCard({ advice, index }) {
@@ -284,7 +191,6 @@ export default function App() {
   const [file,    setFile]    = useState(null)
   const [loading, setLoading] = useState(false)
   const [result,  setResult]  = useState(null)
-  const [showOv,  setShowOv]  = useState(false)
   const [history, setHistory] = useState([])
   const [histLoading, setHistLoading] = useState(false)
   const [secAdvice, setSecAdvice] = useState([])
@@ -305,7 +211,7 @@ export default function App() {
   useEffect(() => { fetchHistory() }, [])
 
   const run = async () => {
-    setLoading(true); setResult(null); setShowOv(false)
+    setLoading(true); setResult(null)
     try {
       let res
       if (tab === 'paste') {
@@ -327,7 +233,6 @@ export default function App() {
       const data = await res.json()
       setResult(data)
       setSecAdvice(data.security_advice ?? [])
-      if (data.status === 'validated') setShowOv(true)
       fetchHistory()   // refresh history after new scan
     } catch {
       setResult({ status: 'error', message: 'Cannot reach backend server.', errors: [] })
@@ -339,7 +244,6 @@ export default function App() {
     <>
       <BgParticles />
       <CursorTrail />
-      {showOv && <SuccessOverlay onDismiss={() => setShowOv(false)} />}
 
       {/* ══ HEADER ══ */}
       <header className="hdr">
@@ -457,15 +361,17 @@ export default function App() {
                   </div>
                 </div>
 
-              ) : isValid && !showOv ? (
+              ) : isValid ? (
                 /* INLINE SUCCESS */
                 <div className="inline-ok">
-                  <span className="iok-trophy">🏆</span>
-                  <h3>All Clear!</h3>
-                  <p>No issues found in your code.</p>
-                  <button className="btn-replay" onClick={() => setShowOv(true)}>
-                    Replay Celebration 🎆
-                  </button>
+                  <div className="iok-check-circle">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                      <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                    </svg>
+                  </div>
+                  <h3>Analysis Complete</h3>
+                  <p>Zero issues detected. Your code passed all validation checks successfully.</p>
                 </div>
 
               ) : !isValid ? (
