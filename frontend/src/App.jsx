@@ -1,77 +1,13 @@
 import { useState, useEffect, useRef } from 'react'
 import Editor from '@monaco-editor/react'
 
-/* ─── Precomputed background code-symbol particles ─── */
-const SYM_SET = ['{ }', '</>', '//', '[ ]', '( )', '&&', '++', '!==', '===', 'fn', '0x', '=>', '**', '#!']
-const BG_PTS = Array.from({ length: 20 }, (_, i) => ({
-  id:  i,
-  sym: SYM_SET[i % SYM_SET.length],
-  lft: Math.round(((i * 5.13 + 2.9) % 95) + 2),
-  dur: Math.round(10 + (i * 1.71) % 14),
-  del: -Math.round((i * 2.43) % 22),
-  sz:  Math.round(10 + (i * 0.89) % 13),
-  op:  parseFloat((0.035 + (i * 0.005) % 0.065).toFixed(3)),
-}))
-
-function BgParticles() {
-  return (
-    <div className="bg-pts" aria-hidden="true">
-      {BG_PTS.map(p => (
-        <span key={p.id} className="bg-sym" style={{
-          left: `${p.lft}%`, fontSize: `${p.sz}px`, opacity: p.op,
-          animationDuration: `${p.dur}s`, animationDelay: `${p.del}s`,
-        }}>{p.sym}</span>
-      ))}
-    </div>
-  )
-}
-
-/* ─── Cursor trail: code symbols float from the mouse ─── */
-function CursorTrail() {
-  const ref = useRef(null)
-  useEffect(() => {
-    const SYMS = ['{}', '//', '=>', '[ ]', '( )', '&&', '++', '0x', 'fn', '!=', '===', '**', '</', '#!']
-    const COLS = ['#06d6f0', '#b06bff', '#2eef7b', '#ffc53d', '#ff67c3', '#ff8c42']
-    let lx = -9999, ly = -9999
-    const onMove = e => {
-      if (Math.hypot(e.clientX - lx, e.clientY - ly) < 28) return
-      lx = e.clientX; ly = e.clientY
-      const el = document.createElement('span')
-      el.className = 'cur-sym'
-      el.textContent = SYMS[Math.floor(Math.random() * SYMS.length)]
-      el.style.cssText = [
-        `left:${lx + (Math.random() - 0.5) * 34}px`,
-        `top:${ly + (Math.random() - 0.5) * 34}px`,
-        `color:${COLS[Math.floor(Math.random() * COLS.length)]}`,
-        `font-size:${8 + Math.floor(Math.random() * 10)}px`,
-      ].join(';')
-      ref.current?.appendChild(el)
-      setTimeout(() => el.remove(), 950)
-    }
-    window.addEventListener('mousemove', onMove, { passive: true })
-    return () => window.removeEventListener('mousemove', onMove)
-  }, [])
-  return <div ref={ref} className="cur-trail" aria-hidden="true" />
-}
-
-/* ─── Scan-beam laser that sweeps editor during analysis ─── */
-function ScanBeam({ active }) {
-  if (!active) return null
-  return (
-    <div className="sbeam-wrap" aria-hidden="true">
-      <div className="sbeam-line" />
-      <div className="sbeam-glow" />
-    </div>
-  )
-}
-
 
 
 /* ─── Security Advice Card (from RAG KB) ─── */
 function SecurityAdviceCard({ advice, index }) {
   const [open, setOpen] = useState(false)
   return (
-    <div className="sa" style={{ animationDelay: `${index * 70}ms` }}>
+    <div className="sa">
       <button className="sa-hd" onClick={() => setOpen(v => !v)}>
         <div className="sa-hd-l">
           <span className="sa-ico">🛡</span>
@@ -99,7 +35,7 @@ function SecurityAdviceCard({ advice, index }) {
 function ErrorCard({ error, index }) {
   const [open, setOpen] = useState(true)
   return (
-    <div className="ec" style={{ animationDelay: `${index * 90}ms` }}>
+    <div className="ec">
       <button className="ec-hd" onClick={() => setOpen(v => !v)}>
         <div className="ec-hd-l">
           <span className="ec-bug">🐛</span>
@@ -156,7 +92,7 @@ function HistoryItem({ item, index }) {
   const [open, setOpen] = useState(false)
   const ok = item.status === 'validated'
   return (
-    <div className="hi" style={{ animationDelay: `${index * 60}ms` }}>
+    <div className="hi">
       <button className="hi-hd" onClick={() => setOpen(v => !v)}>
         <div className="hi-left">
           <span className={`hi-dot ${ok ? 'hi-dot-ok' : 'hi-dot-err'}`} />
@@ -242,8 +178,7 @@ export default function App() {
 
   return (
     <>
-      <BgParticles />
-      <CursorTrail />
+
 
       {/* ══ HEADER ══ */}
       <header className="hdr">
@@ -292,7 +227,6 @@ export default function App() {
 
             {tab === 'paste' ? (
               <div className="editor-box">
-                <ScanBeam active={loading} />
                 <Editor
                   height="500px"
                   language={lang}
@@ -324,10 +258,7 @@ export default function App() {
                 </span>
               )}
               <button className={`run-btn ${loading ? 'run-loading' : ''}`} onClick={run} disabled={loading}>
-                {loading
-                  ? <><span className="run-spin" /><span>Analysing...</span></>
-                  : <><span className="run-hex">⬡</span><span>Run Analysis</span></>
-                }
+                {loading ? <span>Analysing...</span> : <span>Run Analysis</span>}
               </button>
             </div>
           </div>
@@ -351,7 +282,6 @@ export default function App() {
                 <div className="empty-st">
                   <div className="mag-wrap">
                     <span className="mag-ico">🔍</span>
-                    <div className="pulse-rings"><div /><div /><div /></div>
                   </div>
                   <p className="empty-txt">
                     Paste or upload your code,<br />then click <em>Run Analysis</em>
