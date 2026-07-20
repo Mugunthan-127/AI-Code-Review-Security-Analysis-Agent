@@ -35,4 +35,18 @@ def init_db():
         conn.execute(text("""
             CREATE INDEX IF NOT EXISTS ix_scans_session_id ON scans (session_id)
         """))
+        # Safe migration: add summary_text column if missing
+        conn.execute(text("""
+            ALTER TABLE scans
+            ADD COLUMN IF NOT EXISTS summary_text TEXT
+        """))
+        # Safe migration: add agent_source and owasp_type columns on findings
+        conn.execute(text("""
+            ALTER TABLE findings
+            ADD COLUMN IF NOT EXISTS agent_source VARCHAR
+        """))
+        conn.execute(text("""
+            ALTER TABLE findings
+            ADD COLUMN IF NOT EXISTS owasp_type VARCHAR
+        """))
         conn.commit()

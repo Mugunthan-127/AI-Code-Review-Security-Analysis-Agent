@@ -21,15 +21,29 @@ KB_DIR = os.getenv(
 
 # Category mapping by filename patterns
 CATEGORY_MAP = {
-    'owasp_a01': ('broken_access_control', 'A01', None),
-    'owasp_a02': ('cryptographic_failures', 'A02', None),
-    'owasp_a03': ('injection', 'A03', 'CWE-89'),
-    'injection':  ('injection', 'A03', 'CWE-89'),
-    'python':     ('python_security', None, None),
-    'java':       ('java_security', None, None),
-    'xss':        ('cross_site_scripting', 'A03', 'CWE-79'),
-    'auth':       ('authentication', 'A07', 'CWE-287'),
-    'cheat_sheet':('cheat_sheet', None, None),
+    'owasp_a01': ('broken_access_control',       'A01', None),
+    'owasp_a02': ('cryptographic_failures',       'A02', None),
+    'owasp_a03': ('injection',                    'A03', 'CWE-89'),
+    'owasp_a04': ('insecure_design',              'A04', None),
+    'owasp_a05': ('security_misconfiguration',    'A05', None),
+    'owasp_a06': ('vulnerable_components',        'A06', None),
+    'owasp_a07': ('authentication_failures',      'A07', 'CWE-287'),
+    'owasp_a08': ('data_integrity_failures',      'A08', 'CWE-502'),
+    'owasp_a09': ('logging_failures',             'A09', None),
+    'owasp_a10': ('ssrf',                         'A10', 'CWE-918'),
+    'injection':  ('injection',                   'A03', 'CWE-89'),
+    'python':     ('python_security',             None,  None),
+    'java':       ('java_security',               None,  None),
+    'xss':        ('cross_site_scripting',        'A03', 'CWE-79'),
+    'auth':       ('authentication',              'A07', 'CWE-287'),
+    'cheat_sheet':('cheat_sheet',                 None,  None),
+    'cwe':        ('cwe_reference',               None,  None),
+    'secure_auth':('authentication',              'A07', 'CWE-287'),
+    'csrf':       ('csrf',                        'A01', 'CWE-352'),
+    'ssrf':       ('ssrf',                        'A10', 'CWE-918'),
+    'crypto':     ('cryptographic_failures',      'A02', 'CWE-327'),
+    'misconfig':  ('security_misconfiguration',   'A05', None),
+    'deserial':   ('unsafe_deserialization',      'A08', 'CWE-502'),
 }
 
 

@@ -2,9 +2,9 @@ import threading
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from database import init_db, SessionLocal
-from routers import submission
+from routers import submission, kb, chat, reports
 
-app = FastAPI(title="AI Code Review & Security Analysis Agent – Milestone 1")
+app = FastAPI(title="AI Code Review & Security Analysis Agent – Milestone 2")
 
 app.add_middleware(
     CORSMiddleware,
@@ -38,7 +38,9 @@ def on_startup():
 
 
 app.include_router(submission.router, prefix="/api/v1/submit", tags=["submission"])
-
+app.include_router(kb.router, prefix="/api/kb", tags=["kb"])
+app.include_router(chat.router, prefix="/api/scans", tags=["chat"])
+app.include_router(reports.router, prefix="/api/scans", tags=["reports"])
 
 @app.get("/health")
 def health_check():

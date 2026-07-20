@@ -16,32 +16,49 @@ class PasteSubmission(BaseModel):
     session_id: Optional[str] = None
 
 
-def _build_rag_query(language: str, errors: list) -> str:
-    """Build a semantic query string from the language and detected errors."""
-    if errors:
-        issues = ' '.join(e.get('issue', '') for e in errors[:4])
-        return f"{language} security vulnerability {issues}"
-    return f"{language} common security vulnerabilities best practices"
+def _run_orchestrator(db: Session, scan: Scan, code: str) -> dict:
+    from agents.orchestrator import app as langgraph_app
+    from models import Finding
 
+    final_state = langgraph_app.invoke({
+        "scan_id": str(scan.scan_id),
+        "code": code,
+        "language": scan.language.value,
+        # Initialise both parallel-agent output keys
+        "code_analysis_findings": [],
+        "security_findings": [],
+        "findings": [],
+    })
 
-def _format_rag_advice(chunks) -> list:
-    """Convert KBChunk ORM objects into plain dicts for the API response."""
-    seen = set()
-    advice = []
-    for chunk in chunks:
-        # Deduplicate by source + first 60 chars of text
-        key = (chunk.source_name, chunk.chunk_text[:60])
-        if key in seen:
-            continue
-        seen.add(key)
-        advice.append({
-            "source": chunk.source_name,
-            "category": chunk.category,
-            "owasp_id": chunk.owasp_id,
-            "cwe_id": chunk.cwe_id,
-            "text": chunk.chunk_text[:400],   # first 400 chars as excerpt
-        })
-    return advice
+    scan.summary_text = final_state.get("summary_text", "")
+    db.commit()
+
+    findings_out = []
+    for f in final_state.get("findings", []):
+        finding_db = Finding(
+            scan_id=scan.scan_id,
+            agent_source=f.get("agent_source"),
+            line=f.get("line"),
+            column_num=f.get("column"),
+            tool=f.get("tool"),
+            rule_id=f.get("rule_id"),
+            severity=f.get("severity"),
+            category=f.get("category"),
+            owasp_type=f.get("owasp_type"),
+            title=f.get("title"),
+            explanation=f.get("explanation"),
+            suggested_fix=f.get("suggested_fix"),
+            cwe_id=f.get("cwe_id"),
+            grounding_source=f.get("grounding_source")
+        )
+        db.add(finding_db)
+        findings_out.append(f)
+
+    db.commit()
+    return {
+        "summary_text": scan.summary_text,
+        "findings": findings_out
+    }
 
 
 @router.post("/paste")
@@ -64,18 +81,19 @@ def submit_paste(submission: PasteSubmission, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(scan)
 
-    # RAG: retrieve relevant security knowledge for this submission
-    rag_query = _build_rag_query(submission.language, errors)
-    rag_chunks = retrieve(db, rag_query, k=4)
-    security_advice = _format_rag_advice(rag_chunks)
-
-    return {
+    result = {
         "status": status,
         "scan_id": str(scan.scan_id),
         "message": "Validation passed." if is_valid else f"Validation failed: {error_msg}",
-        "errors": errors,
-        "security_advice": security_advice,
+        "syntax_errors": errors,
     }
+
+    if is_valid:
+        orchestrator_res = _run_orchestrator(db, scan, submission.code)
+        result["summary_text"] = orchestrator_res["summary_text"]
+        result["findings"] = orchestrator_res["findings"]
+
+    return result
 
 
 @router.post("/upload")
@@ -113,18 +131,19 @@ async def submit_upload(
     db.commit()
     db.refresh(scan)
 
-    # RAG: retrieve relevant security knowledge
-    rag_query = _build_rag_query(language.value, errors)
-    rag_chunks = retrieve(db, rag_query, k=4)
-    security_advice = _format_rag_advice(rag_chunks)
-
-    return {
+    result = {
         "status": status,
         "scan_id": str(scan.scan_id),
         "message": "Validation passed." if is_valid else f"Validation failed: {error_msg}",
-        "errors": errors,
-        "security_advice": security_advice,
+        "syntax_errors": errors,
     }
+
+    if is_valid:
+        orchestrator_res = _run_orchestrator(db, scan, code_str)
+        result["summary_text"] = orchestrator_res["summary_text"]
+        result["findings"] = orchestrator_res["findings"]
+
+    return result
 
 
 @router.get("/history")

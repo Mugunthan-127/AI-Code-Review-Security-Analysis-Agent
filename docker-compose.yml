@@ -25,6 +25,8 @@ services:
     environment:
       - DATABASE_URL=postgresql://pguser:pgpassword@db:5432/agent_db
       - KB_DIR=/data/kb_sources
+    env_file:
+      - .env
     depends_on:
       db:
         condition: service_healthy
