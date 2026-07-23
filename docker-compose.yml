@@ -1,6 +1,11 @@
 version: '3.8'
 
 services:
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+
   db:
     image: ankane/pgvector:v0.5.1
     environment:
@@ -24,6 +29,7 @@ services:
       - "8000:8000"
     environment:
       - DATABASE_URL=postgresql://pguser:pgpassword@db:5432/agent_db
+      - REDIS_URL=redis://redis:6379/0
       - KB_DIR=/data/kb_sources
     env_file:
       - .env

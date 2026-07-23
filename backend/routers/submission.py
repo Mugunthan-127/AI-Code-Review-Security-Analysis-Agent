@@ -2,18 +2,24 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Header
 from sqlalchemy.orm import Session
 from database import get_db
 from models import Scan, LanguageEnum, SourceTypeEnum, StatusEnum
+import json
 from services.validation import validate_code
 from services.rag import retrieve
-from pydantic import BaseModel
+from pydantic import BaseModel, constr
 from typing import Optional
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.messages import SystemMessage, HumanMessage
 
 router = APIRouter()
 
 
 class PasteSubmission(BaseModel):
-    code: str
+    code: constr(min_length=1)
     language: str
     session_id: Optional[str] = None
+
+class FixRequest(BaseModel):
+    finding_id: int
 
 
 def _run_orchestrator(db: Session, scan: Scan, code: str) -> dict:
@@ -24,76 +30,99 @@ def _run_orchestrator(db: Session, scan: Scan, code: str) -> dict:
         "scan_id": str(scan.scan_id),
         "code": code,
         "language": scan.language.value,
-        # Initialise both parallel-agent output keys
         "code_analysis_findings": [],
         "security_findings": [],
+        "complexity_findings": [],
+        "dependency_findings": [],
+        "license_findings": [],
         "findings": [],
     })
 
+    # Read validation state outputted by the graph
+    is_valid = final_state.get("is_valid", False)
+    scan.status = StatusEnum.completed if is_valid else StatusEnum.rejected
+    scan.validation_error = final_state.get("validation_error", "")
     scan.summary_text = final_state.get("summary_text", "")
+    scan.risk_score = final_state.get("risk_score")
     db.commit()
 
     findings_out = []
-    for f in final_state.get("findings", []):
-        finding_db = Finding(
-            scan_id=scan.scan_id,
-            agent_source=f.get("agent_source"),
-            line=f.get("line"),
-            column_num=f.get("column"),
-            tool=f.get("tool"),
-            rule_id=f.get("rule_id"),
-            severity=f.get("severity"),
-            category=f.get("category"),
-            owasp_type=f.get("owasp_type"),
-            title=f.get("title"),
-            explanation=f.get("explanation"),
-            suggested_fix=f.get("suggested_fix"),
-            cwe_id=f.get("cwe_id"),
-            grounding_source=f.get("grounding_source")
-        )
-        db.add(finding_db)
-        findings_out.append(f)
+    if is_valid:
+        for f in final_state.get("findings", []):
+            finding_db = Finding(
+                scan_id=scan.scan_id,
+                agent_source=f.get("agent_source"),
+                line=f.get("line"),
+                column_num=f.get("column"),
+                tool=f.get("tool"),
+                rule_id=f.get("rule_id"),
+                severity=f.get("severity"),
+                cvss_score=f.get("cvss_score"),
+                category=f.get("category"),
+                owasp_type=f.get("owasp_type"),
+                title=f.get("title"),
+                explanation=f.get("explanation"),
+                suggested_fix=f.get("suggested_fix"),
+                original_code=f.get("original_code"),
+                cwe_id=f.get("cwe_id"),
+                grounding_source=f.get("grounding_source"),
+                confidence_score=f.get("confidence_score"),
+                detected_by=json.dumps(f.get("detected_by", [])) if isinstance(f.get("detected_by"), list) else f.get("detected_by")
+            )
+            db.add(finding_db)
+            db.flush() # get ID
+            f["id"] = finding_db.finding_id
+            findings_out.append(f)
+        db.commit()
 
-    db.commit()
     return {
+        "is_valid": is_valid,
+        "validation_error": scan.validation_error,
+        "syntax_errors": final_state.get("syntax_errors", []),
         "summary_text": scan.summary_text,
+        "risk_score": final_state.get("risk_score"),
         "findings": findings_out
     }
 
 
 @router.post("/paste")
 def submit_paste(submission: PasteSubmission, db: Session = Depends(get_db)):
+    if not submission.code.strip():
+        return {
+            "status": "rejected",
+            "scan_id": None,
+            "message": "Validation failed: Code cannot be empty.",
+            "syntax_errors": [{"issue": "Code cannot be empty.", "severity": "error"}],
+            "summary_text": "Failed to generate summary.",
+            "risk_score": 0,
+            "findings": []
+        }
     if submission.language not in [LanguageEnum.python.value, LanguageEnum.java.value]:
         raise HTTPException(status_code=400, detail="Unsupported language. Must be 'python' or 'java'")
 
-    is_valid, error_msg, errors = validate_code(submission.code, submission.language)
-    status = StatusEnum.validated if is_valid else StatusEnum.rejected
-
+    # Create scan first to get ID
     scan = Scan(
         language=submission.language,
         source_type=SourceTypeEnum.paste,
         raw_code_ref=submission.code,
-        status=status,
-        validation_error=error_msg,
+        status=StatusEnum.analyzed, # Will be updated
         session_id=submission.session_id,
     )
     db.add(scan)
     db.commit()
     db.refresh(scan)
 
-    result = {
-        "status": status,
+    orchestrator_res = _run_orchestrator(db, scan, submission.code)
+
+    return {
+        "status": scan.status,
         "scan_id": str(scan.scan_id),
-        "message": "Validation passed." if is_valid else f"Validation failed: {error_msg}",
-        "syntax_errors": errors,
+        "message": "Validation passed." if orchestrator_res["is_valid"] else f"Validation failed: {orchestrator_res['validation_error']}",
+        "syntax_errors": orchestrator_res["syntax_errors"],
+        "summary_text": orchestrator_res["summary_text"],
+        "risk_score": orchestrator_res["risk_score"],
+        "findings": orchestrator_res["findings"]
     }
-
-    if is_valid:
-        orchestrator_res = _run_orchestrator(db, scan, submission.code)
-        result["summary_text"] = orchestrator_res["summary_text"]
-        result["findings"] = orchestrator_res["findings"]
-
-    return result
 
 
 @router.post("/upload")
@@ -116,34 +145,28 @@ async def submit_upload(
     except UnicodeDecodeError:
         raise HTTPException(status_code=400, detail="File must be valid UTF-8 encoded text.")
 
-    is_valid, error_msg, errors = validate_code(code_str, language.value)
-    status = StatusEnum.validated if is_valid else StatusEnum.rejected
-
     scan = Scan(
         language=language,
         source_type=SourceTypeEnum.upload,
         raw_code_ref=code_str,
-        status=status,
-        validation_error=error_msg,
+        status=StatusEnum.analyzed,
         session_id=x_session_id,
     )
     db.add(scan)
     db.commit()
     db.refresh(scan)
 
-    result = {
-        "status": status,
+    orchestrator_res = _run_orchestrator(db, scan, code_str)
+
+    return {
+        "status": scan.status,
         "scan_id": str(scan.scan_id),
-        "message": "Validation passed." if is_valid else f"Validation failed: {error_msg}",
-        "syntax_errors": errors,
+        "message": "Validation passed." if orchestrator_res["is_valid"] else f"Validation failed: {orchestrator_res['validation_error']}",
+        "syntax_errors": orchestrator_res["syntax_errors"],
+        "summary_text": orchestrator_res["summary_text"],
+        "risk_score": orchestrator_res["risk_score"],
+        "findings": orchestrator_res["findings"]
     }
-
-    if is_valid:
-        orchestrator_res = _run_orchestrator(db, scan, code_str)
-        result["summary_text"] = orchestrator_res["summary_text"]
-        result["findings"] = orchestrator_res["findings"]
-
-    return result
 
 
 @router.get("/history")
@@ -168,6 +191,53 @@ def get_history(
             "status": s.status.value if s.status else None,
             "created_at": s.created_at.isoformat() if s.created_at else None,
             "snippet": (s.raw_code_ref or "")[:120],
+            "risk_score": s.risk_score,
         }
         for s in scans
     ]
+
+
+@router.post("/{scan_id}/fix")
+def apply_fix(scan_id: str, req: FixRequest, db: Session = Depends(get_db)):
+    scan = db.query(Scan).filter(Scan.scan_id == scan_id).first()
+    if not scan:
+        raise HTTPException(status_code=404, detail="Scan not found")
+        
+    from models import Finding
+    finding = db.query(Finding).filter(Finding.id == req.finding_id, Finding.scan_id == scan_id).first()
+    if not finding or not finding.suggested_fix:
+        raise HTTPException(status_code=404, detail="Finding or suggested fix not found")
+        
+    llm = ChatGoogleGenerativeAI(model="gemini-flash-latest", temperature=0)
+    prompt = f"""You are an automated code patcher.
+Apply the following fix to the source code.
+
+SOURCE CODE:
+{scan.raw_code_ref}
+
+VULNERABLE SNIPPET TO REPLACE:
+{finding.original_code or f"Line {finding.line}"}
+
+SUGGESTED FIX TO APPLY:
+{finding.suggested_fix}
+
+Return ONLY the fully patched source code. No markdown formatting blocks around the code (no ```), no preamble, no explanations. Just the raw code.
+"""
+    try:
+        response = llm.invoke([
+            SystemMessage(content="You are a strict code patcher. Output ONLY raw source code."),
+            HumanMessage(content=prompt)
+        ])
+        raw_content = response.content
+        if isinstance(raw_content, list):
+            raw_content = raw_content[0].get("text", "") if isinstance(raw_content[0], dict) else str(raw_content[0])
+        patched_code = str(raw_content).strip()
+        if patched_code.startswith("```"):
+            lines = patched_code.split("\n")
+            if len(lines) > 1 and lines[0].startswith("```"):
+                patched_code = "\n".join(lines[1:])
+            if patched_code.endswith("```"):
+                patched_code = patched_code[:-3]
+        return {"patched_code": patched_code}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

@@ -5,35 +5,21 @@ import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
 from database import SessionLocal
-from services.rag import ingest_document
+from services.rag import ingest_all_kb_sources
+from models import KBDocument, KBChunk
 
 def ingest_all():
     db = SessionLocal()
-    kb_dir = os.path.join(os.path.dirname(__file__), '..', 'data', 'kb_sources')
-    
-    if not os.path.exists(kb_dir):
-        print(f"Directory {kb_dir} not found.")
-        return
+    try:
+        # Clear existing KB data to avoid duplicates during re-ingestion
+        print("Clearing existing KB data...")
+        db.query(KBChunk).delete()
+        db.query(KBDocument).delete()
+        db.commit()
         
-    for filename in os.listdir(kb_dir):
-        if filename.endswith(".md") or filename.endswith(".txt"):
-            filepath = os.path.join(kb_dir, filename)
-            with open(filepath, 'r', encoding='utf-8') as f:
-                content = f.read()
-                
-            # Dummy category mapping
-            category = "guideline"
-            if "cheat_sheet" in filename:
-                category = "cheat_sheet"
-                
-            ingest_document(
-                db=db,
-                source_name=filename,
-                category=category,
-                content=content
-            )
-            
-    db.close()
+        ingest_all_kb_sources(db)
+    finally:
+        db.close()
 
 if __name__ == "__main__":
     print("Starting ingestion...")

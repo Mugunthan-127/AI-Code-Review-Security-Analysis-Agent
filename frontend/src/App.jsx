@@ -17,30 +17,54 @@ const getSevMeta = (sev) => SEV_META[String(sev).toLowerCase()] || SEV_META.low
 /* ─── Agent source badge ─── */
 function AgentBadge({ source }) {
   if (!source) return null
-  const isSecAgent = source === 'security_vulnerability'
+  const isSec = source === 'security_vulnerability'
+  const isQual = source === 'code_analysis'
+  const isComp = source === 'complexity'
+  const isDep = source === 'dependency'
+  const isLic = source === 'license'
+
+  let bg = 'rgba(139,92,246,0.12)'; let col = '#c084fc'; let bor = 'rgba(139,92,246,0.35)'; let lbl = '🔍 Code Quality'
+  
+  if (isSec) { bg = 'rgba(239,68,68,0.1)'; col = '#f87171'; bor = 'rgba(239,68,68,0.3)'; lbl = '🔒 Security' }
+  else if (isComp) { bg = 'rgba(59,130,246,0.1)'; col = '#60a5fa'; bor = 'rgba(59,130,246,0.3)'; lbl = '🧠 Complexity' }
+  else if (isDep) { bg = 'rgba(245,158,11,0.1)'; col = '#fbbf24'; bor = 'rgba(245,158,11,0.3)'; lbl = '📦 Dependency' }
+  else if (isLic) { bg = 'rgba(16,185,129,0.1)'; col = '#34d399'; bor = 'rgba(16,185,129,0.3)'; lbl = '⚖️ License' }
+
   return (
     <span
       className="agent-badge"
-      style={{
-        background: isSecAgent ? 'rgba(239,68,68,0.1)' : 'rgba(139,92,246,0.12)',
-        color:      isSecAgent ? '#f87171' : '#c084fc',
-        border:     isSecAgent ? '1px solid rgba(239,68,68,0.3)' : '1px solid rgba(139,92,246,0.35)',
-      }}
+      style={{ background: bg, color: col, border: `1px solid ${bor}` }}
     >
-      {isSecAgent ? '🔒 Security' : '🔍 Code Quality'}
+      {lbl}
     </span>
   )
 }
 
 /* ─── Severity pill ─── */
-function SevPill({ severity }) {
+function SevPill({ severity, cvss }) {
   const m = getSevMeta(severity)
   return (
     <span
       className="sev-pill"
       style={{ color: m.color, background: m.bg, border: `1px solid ${m.border}` }}
     >
-      {m.label}
+      {cvss ? `CVSS ${cvss} ` : ''}{m.label}
+    </span>
+  )
+}
+
+/* ─── Validation pill ─── */
+function ValidationPill({ status }) {
+  if (!status) return null
+  const isYes = status === 'YES'
+  const isNo = status === 'NO'
+  const color = isYes ? '#10b981' : isNo ? '#ef4444' : '#f59e0b'
+  const bg = isYes ? 'rgba(16,185,129,0.1)' : isNo ? 'rgba(239,68,68,0.1)' : 'rgba(245,158,11,0.1)'
+  const border = isYes ? 'rgba(16,185,129,0.3)' : isNo ? 'rgba(239,68,68,0.3)' : 'rgba(245,158,11,0.3)'
+  const label = isYes ? '✓ Validated' : isNo ? '✗ False Positive' : '⚠ Needs Review'
+  return (
+    <span className="sev-pill" style={{ color, background: bg, border: `1px solid ${border}`, marginLeft: '8px' }}>
+      {label}
     </span>
   )
 }
@@ -73,11 +97,41 @@ function SecurityAdviceCard({ advice }) {
   )
 }
 
-/* ─── Finding Card (Milestone 2: shows agent_source, owasp_type, cwe_id, severity) ─── */
-function FindingCard({ finding, index }) {
+/* ─── Finding Card ─── */
+function FindingCard({ finding, index, scanId }) {
   const [open, setOpen] = useState(index < 3) // First 3 expanded by default
+  const [fixing, setFixing] = useState(false)
   const isSec = finding.agent_source === 'security_vulnerability'
   const sevMeta = getSevMeta(finding.severity)
+
+  const handleApplyFix = async () => {
+    if (!finding.id || !scanId) return alert("Missing finding ID or scan ID");
+    setFixing(true);
+    try {
+      const res = await fetch(`http://127.0.0.1:8000/api/v1/submit/${scanId}/fix`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ finding_id: finding.id })
+      });
+      if (!res.ok) throw new Error("Fix generation failed");
+      const data = await res.json();
+      
+      // Trigger download
+      const blob = new Blob([data.patched_code], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `patched_file_${finding.id}.txt`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      alert("Error applying fix: " + e.message);
+    } finally {
+      setFixing(false);
+    }
+  };
 
   return (
     <div className={`fc ${isSec ? 'fc-sec' : 'fc-quality'}`} style={{ '--sev-color': sevMeta.color, '--sev-border': sevMeta.border }}>
@@ -91,7 +145,9 @@ function FindingCard({ finding, index }) {
               {/* Agent badge */}
               <AgentBadge source={finding.agent_source} />
               {/* Severity pill */}
-              <SevPill severity={finding.severity} />
+              <SevPill severity={finding.severity} cvss={finding.cvss_score} />
+              {/* Validation Status pill */}
+              <ValidationPill status={finding.validation_status} />
               {/* Location */}
               {finding.line != null && (
                 <span className="fc-loc">
@@ -138,6 +194,54 @@ function FindingCard({ finding, index }) {
             </div>
           )}
 
+          {/* Explainability Block (Phase 11) */}
+          <div className="fc-explainability-block" style={{ marginTop: '12px', padding: '12px', background: 'rgba(0,0,0,0.2)', borderRadius: '6px', display: 'flex', flexWrap: 'wrap', gap: '16px' }}>
+            
+            <div style={{ flex: '1 1 120px' }}>
+              <div className="fc-section-lbl" style={{ marginBottom: '4px', color: 'var(--txt-muted)', fontSize: '0.75rem' }}>DETECTED BY</div>
+              <ul style={{ listStyleType: 'none', padding: 0, margin: 0 }}>
+                {finding.detected_by ? (
+                  (typeof finding.detected_by === 'string' ? JSON.parse(finding.detected_by) : finding.detected_by).map((tool, idx) => (
+                    <li key={idx} style={{ color: 'var(--primary)', fontSize: '0.9rem', marginBottom: '2px', fontWeight: 'bold' }}>
+                      ↓ {tool}
+                    </li>
+                  ))
+                ) : (
+                  <li style={{ color: 'var(--primary)', fontSize: '0.9rem', fontWeight: 'bold' }}>↓ {finding.tool || 'Unknown'}</li>
+                )}
+              </ul>
+            </div>
+
+            {finding.rule_id && (
+              <div style={{ flex: '1 1 120px' }}>
+                <div className="fc-section-lbl" style={{ marginBottom: '4px', color: 'var(--txt-muted)', fontSize: '0.75rem' }}>RULE</div>
+                <div style={{ color: 'var(--primary)', fontSize: '0.9rem', fontWeight: 'bold' }}>↓ {finding.rule_id}</div>
+              </div>
+            )}
+
+            {finding.owasp_type && (
+              <div style={{ flex: '1 1 120px' }}>
+                <div className="fc-section-lbl" style={{ marginBottom: '4px', color: 'var(--txt-muted)', fontSize: '0.75rem' }}>OWASP</div>
+                <div style={{ color: 'var(--primary)', fontSize: '0.9rem', fontWeight: 'bold' }}>↓ {finding.owasp_type}</div>
+              </div>
+            )}
+
+            {finding.cwe_id && (
+              <div style={{ flex: '1 1 120px' }}>
+                <div className="fc-section-lbl" style={{ marginBottom: '4px', color: 'var(--txt-muted)', fontSize: '0.75rem' }}>CWE</div>
+                <div style={{ color: 'var(--primary)', fontSize: '0.9rem', fontWeight: 'bold' }}>↓ {finding.cwe_id}</div>
+              </div>
+            )}
+
+            {finding.confidence_score && (
+              <div style={{ flex: '1 1 120px' }}>
+                <div className="fc-section-lbl" style={{ marginBottom: '4px', color: 'var(--txt-muted)', fontSize: '0.75rem' }}>CONFIDENCE</div>
+                <div style={{ color: 'var(--primary)', fontSize: '0.9rem', fontWeight: 'bold' }}>↓ {finding.confidence_score}</div>
+              </div>
+            )}
+
+          </div>
+
           {/* Grounding source (RAG KB) */}
           {finding.grounding_source && (
             <div className="fc-grounding">
@@ -148,11 +252,44 @@ function FindingCard({ finding, index }) {
             </div>
           )}
 
-          {/* Suggested fix */}
+          {/* Auto Fix / Diff View */}
           {(finding.suggested_fix || finding.fix) && (
-            <div className="fc-fix-block">
-              <span className="fc-section-lbl">💡 How to Fix</span>
-              <pre className="fc-fix-code">{finding.suggested_fix || finding.fix}</pre>
+            <div className="fc-fix" style={{ marginTop: '16px' }}>
+              
+              {/* Original Code */}
+              {finding.original_code && (
+                <div style={{ marginBottom: '12px' }}>
+                  <span className="fc-section-lbl" style={{ color: '#ef4444' }}>❌ Original Code</span>
+                  <pre className="fc-code" style={{ borderLeft: '3px solid #ef4444' }}>
+                    <code>{finding.original_code}</code>
+                  </pre>
+                </div>
+              )}
+
+              {/* Secure Code */}
+              <div style={{ position: 'relative' }}>
+                <span className="fc-section-lbl" style={{ color: '#10b981' }}>✅ Secure Code</span>
+                <pre className="fc-code" style={{ borderLeft: '3px solid #10b981', paddingBottom: '40px' }}>
+                  <code>{finding.suggested_fix || finding.fix}</code>
+                </pre>
+                
+                {/* Action Buttons */}
+                <div style={{ position: 'absolute', bottom: '8px', right: '8px', display: 'flex', gap: '8px' }}>
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(finding.suggested_fix || finding.fix); }}
+                    style={{ background: 'rgba(255,255,255,0.1)', border: 'none', padding: '4px 8px', borderRadius: '4px', color: 'var(--txt-muted)', cursor: 'pointer', fontSize: '0.8rem' }}
+                  >
+                    📋 Copy
+                  </button>
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); handleApplyFix(); }}
+                    disabled={fixing}
+                    style={{ background: 'var(--primary)', border: 'none', padding: '4px 12px', borderRadius: '4px', color: '#000', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.8rem' }}
+                  >
+                    {fixing ? "Fixing..." : "🪄 Apply Fix"}
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </div>
@@ -161,41 +298,104 @@ function FindingCard({ finding, index }) {
   )
 }
 
-/* ─── Agent Stats Panel ─── */
-function AgentStats({ findings }) {
-  const secFindings     = findings.filter(f => f.agent_source === 'security_vulnerability')
-  const qualityFindings = findings.filter(f => f.agent_source === 'code_analysis')
-  const criticalCount   = findings.filter(f => ['critical','high'].includes(String(f.severity).toLowerCase())).length
-  const mediumCount     = findings.filter(f => String(f.severity).toLowerCase() === 'medium').length
+/* ─── Agent Stats Panel (Visual Dashboard) ─── */
+function AgentStats({ findings, riskScore, history, scanId }) {
+  const secCount = findings.filter(f => f.agent_source === 'security_vulnerability').length
+  const qualCount = findings.filter(f => f.agent_source === 'code_analysis').length
+  const compCount = findings.filter(f => f.agent_source === 'complexity').length
+  const depCount = findings.filter(f => f.agent_source === 'dependency').length
+  const licCount = findings.filter(f => f.agent_source === 'license').length
+
+  // Calculate Trend
+  let trendText = null;
+  let trendColor = 'var(--txt-muted)';
+  if (history && history.length > 0 && riskScore !== undefined && riskScore !== null) {
+    // History is ordered newest first. Find the previous scan.
+    // If the first scan in history is the current one, look at the second one.
+    const currentIsFirst = history[0].scan_id === scanId;
+    const previousScan = currentIsFirst ? history[1] : history[0];
+    
+    if (previousScan && previousScan.risk_score !== undefined && previousScan.risk_score !== null) {
+      const prevScore = previousScan.risk_score;
+      if (riskScore < prevScore) {
+        trendText = `Previous Scan (${prevScore}) ↓ Current Scan (${riskScore}) [Trending Down 🟢]`;
+        trendColor = '#10b981';
+      } else if (riskScore > prevScore) {
+        trendText = `Previous Scan (${prevScore}) ↑ Current Scan (${riskScore}) [Trending Up 🔴]`;
+        trendColor = '#ef4444';
+      } else {
+        trendText = `Previous Scan (${prevScore}) → Current Scan (${riskScore}) [Unchanged ⚪]`;
+        trendColor = '#94a3b8';
+      }
+    }
+  }
+
+  // Visual Bars Helper
+  const renderBlocks = (count) => {
+    if (count === 0) return <span style={{color: 'var(--txt-muted)'}}>0</span>;
+    return '■'.repeat(Math.min(count, 15)) + (count > 15 ? '+' : '');
+  };
 
   return (
     <div className="agent-stats">
+      {/* Visual Risk Score Dashboard */}
+      {riskScore !== undefined && riskScore !== null && (
+        <div className="agent-stat-card" style={{ background: 'rgba(239,68,68,0.05)', border: '1px solid rgba(239,68,68,0.3)', width: '100%', flex: '1 1 100%', flexDirection: 'column', alignItems: 'flex-start', padding: '16px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', marginBottom: '8px' }}>
+            <span className="ast-label" style={{ fontWeight: 'bold' }}>Risk Score</span>
+            <span className="ast-count" style={{ color: riskScore > 70 ? '#ef4444' : riskScore > 30 ? '#f59e0b' : '#10b981' }}>{riskScore}%</span>
+          </div>
+          {/* Progress Bar */}
+          <div style={{ width: '100%', height: '12px', background: 'rgba(255,255,255,0.1)', borderRadius: '6px', overflow: 'hidden' }}>
+            <div style={{ 
+              width: `${riskScore}%`, 
+              height: '100%', 
+              background: riskScore > 70 ? '#ef4444' : riskScore > 30 ? '#f59e0b' : '#10b981',
+              transition: 'width 1s ease-in-out'
+            }} />
+          </div>
+          {trendText && (
+            <div style={{ marginTop: '12px', fontSize: '0.85rem', color: trendColor }}>
+              {trendText}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Category Charts */}
       <div className="agent-stat-card agent-stat-sec">
         <span className="ast-ico">🔒</span>
         <div className="ast-info">
-          <span className="ast-count">{secFindings.length}</span>
-          <span className="ast-label">Security Issues</span>
+          <span className="ast-count" style={{ letterSpacing: '2px', color: '#f87171' }}>{renderBlocks(secCount)}</span>
+          <span className="ast-label">Security ({secCount})</span>
         </div>
       </div>
       <div className="agent-stat-card agent-stat-quality">
         <span className="ast-ico">🔍</span>
         <div className="ast-info">
-          <span className="ast-count">{qualityFindings.length}</span>
-          <span className="ast-label">Code Quality</span>
+          <span className="ast-count" style={{ letterSpacing: '2px', color: '#c084fc' }}>{renderBlocks(qualCount)}</span>
+          <span className="ast-label">Quality ({qualCount})</span>
         </div>
       </div>
-      <div className="agent-stat-card agent-stat-critical">
-        <span className="ast-ico">🚨</span>
+      <div className="agent-stat-card" style={{ background: 'rgba(59,130,246,0.05)', border: '1px solid rgba(59,130,246,0.2)' }}>
+        <span className="ast-ico">🧠</span>
         <div className="ast-info">
-          <span className="ast-count">{criticalCount}</span>
-          <span className="ast-label">High+ Severity</span>
+          <span className="ast-count" style={{ color: '#60a5fa' }}>{compCount}</span>
+          <span className="ast-label">Complexity</span>
         </div>
       </div>
-      <div className="agent-stat-card agent-stat-medium">
-        <span className="ast-ico">⚠️</span>
+      <div className="agent-stat-card" style={{ background: 'rgba(245,158,11,0.05)', border: '1px solid rgba(245,158,11,0.2)' }}>
+        <span className="ast-ico">📦</span>
         <div className="ast-info">
-          <span className="ast-count">{mediumCount}</span>
-          <span className="ast-label">Medium</span>
+          <span className="ast-count" style={{ color: '#fbbf24' }}>{depCount}</span>
+          <span className="ast-label">Dependency</span>
+        </div>
+      </div>
+      <div className="agent-stat-card" style={{ background: 'rgba(16,185,129,0.05)', border: '1px solid rgba(16,185,129,0.2)' }}>
+        <span className="ast-ico">⚖️</span>
+        <div className="ast-info">
+          <span className="ast-count" style={{ color: '#34d399' }}>{licCount}</span>
+          <span className="ast-label">License</span>
         </div>
       </div>
     </div>
@@ -282,6 +482,7 @@ export default function App() {
   const rawFindings = result?.findings ?? result?.syntax_errors ?? []
   const summary     = result?.summary_text
   const scanId      = result?.scan_id
+  const riskScore   = result?.risk_score
   const isValid     = result?.status === 'validated' && rawFindings.length === 0
 
   // Apply filters
@@ -303,6 +504,10 @@ export default function App() {
   useEffect(() => { fetchHistory() }, [])
 
   const run = async () => {
+    if (tab === 'paste' && !code.trim()) {
+      alert("Please enter code.");
+      return;
+    }
     setLoading(true); setResult(null); setFilterAgent('all'); setFilterSev('all')
     try {
       let res
@@ -334,6 +539,9 @@ export default function App() {
 
   const secCount     = rawFindings.filter(f => f.agent_source === 'security_vulnerability').length
   const qualityCount = rawFindings.filter(f => f.agent_source === 'code_analysis').length
+  const compCount    = rawFindings.filter(f => f.agent_source === 'complexity').length
+  const depCount     = rawFindings.filter(f => f.agent_source === 'dependency').length
+  const licCount     = rawFindings.filter(f => f.agent_source === 'license').length
 
   return (
     <>
@@ -388,7 +596,7 @@ export default function App() {
             {tab === 'paste' ? (
               <div className="editor-box">
                 <Editor
-                  height="500px"
+                  height="100%"
                   language={lang}
                   theme="vs-dark"
                   value={code}
@@ -417,6 +625,11 @@ export default function App() {
                   {isValid ? '✓ Passed' : `✗ ${rawFindings.length} Issue${rawFindings.length !== 1 ? 's' : ''}`}
                 </span>
               )}
+              {result && (
+                <button id="new-analysis-btn" className="run-btn" style={{background: 'rgba(255,255,255,0.05)', color: 'var(--txt-muted)', border: '1px solid rgba(255,255,255,0.1)'}} onClick={() => {setResult(null); setCode(''); setFile(null)}}>
+                  🔄 New Analysis
+                </button>
+              )}
               <button id="run-analysis-btn" className={`run-btn ${loading ? 'run-loading' : ''}`} onClick={run} disabled={loading}>
                 {loading
                   ? <><span className="run-spin" />  <span>Analysing...</span></>
@@ -426,17 +639,17 @@ export default function App() {
 
             {/* Parallel execution indicator */}
             {loading && (
-              <div className="parallel-indicator">
-                <div className="par-lane">
-                  <div className="par-dot par-dot-active" />
-                  <span>Code Analysis Agent</span>
-                  <div className="par-pulse" />
+              <div className="parallel-indicator" style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'center', gap: '16px', flexWrap: 'wrap' }}>
+                  <div className="par-lane"><div className="par-dot par-dot-active" /><span>Code Quality</span></div>
+                  <div className="par-lane"><div className="par-dot par-dot-active" /><span>Security</span></div>
+                  <div className="par-lane"><div className="par-dot par-dot-active" /><span>Complexity</span></div>
+                  <div className="par-lane"><div className="par-dot par-dot-active" /><span>Dependency</span></div>
+                  <div className="par-lane"><div className="par-dot par-dot-active" /><span>License</span></div>
                 </div>
-                <div className="par-merge">⇢ Merge ⇢</div>
-                <div className="par-lane">
-                  <div className="par-dot par-dot-active" />
-                  <span>Security Vulnerability Agent</span>
-                  <div className="par-pulse" />
+                <div style={{ textAlign: 'center', color: 'var(--txt-muted)' }}>⇣ Merge ⇣</div>
+                <div style={{ display: 'flex', justifyContent: 'center' }}>
+                  <div className="par-lane"><div className="par-dot par-dot-active" /><span>Risk Score</span><div className="par-pulse" /></div>
                 </div>
               </div>
             )}
@@ -505,7 +718,7 @@ export default function App() {
                   </div>
 
                   {/* Agent Statistics */}
-                  <AgentStats findings={rawFindings} />
+                  <AgentStats findings={rawFindings} riskScore={riskScore} history={history} scanId={scanId} />
 
                   {/* PR Summary */}
                   {summary && (
@@ -523,11 +736,14 @@ export default function App() {
                   <div className="filter-bar">
                     <div className="filter-group">
                       <span className="filter-label">Agent</span>
-                      <div className="filter-pills">
+                      <div className="filter-pills" style={{ flexWrap: 'wrap', gap: '4px' }}>
                         {[
                           { v: 'all',                    label: 'All' },
-                          { v: 'security_vulnerability', label: `🔒 Security (${secCount})` },
-                          { v: 'code_analysis',          label: `🔍 Quality (${qualityCount})` },
+                          { v: 'security_vulnerability', label: `🔒 (${secCount})` },
+                          { v: 'code_analysis',          label: `🔍 (${qualityCount})` },
+                          { v: 'complexity',             label: `🧠 (${compCount})` },
+                          { v: 'dependency',             label: `📦 (${depCount})` },
+                          { v: 'license',                label: `⚖️ (${licCount})` },
                         ].map(({ v, label }) => (
                           <button
                             key={v}
@@ -560,6 +776,7 @@ export default function App() {
                           <FindingCard
                             key={i}
                             index={i}
+                            scanId={scanId}
                             finding={{
                               ...f,
                               title: f.title || f.issue,

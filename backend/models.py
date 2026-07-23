@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Text, DateTime, Integer, Enum, ForeignKey
+from sqlalchemy import Column, String, Text, DateTime, Integer, Enum, ForeignKey, Float
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 import uuid
@@ -15,7 +15,44 @@ class User(Base):
     email = Column(String, unique=True, index=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
+    projects = relationship("Project", back_populates="owner")
     scans = relationship("Scan", back_populates="user")
+
+class Project(Base):
+    __tablename__ = "projects"
+    
+    project_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name = Column(String, index=True)
+    owner_id = Column(UUID(as_uuid=True), ForeignKey("users.user_id"))
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    owner = relationship("User", back_populates="projects")
+    repositories = relationship("Repository", back_populates="project")
+
+class Repository(Base):
+    __tablename__ = "repositories"
+    
+    repo_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id = Column(UUID(as_uuid=True), ForeignKey("projects.project_id"))
+    name = Column(String, index=True)
+    url = Column(String)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    project = relationship("Project", back_populates="repositories")
+    commits = relationship("Commit", back_populates="repository")
+
+class Commit(Base):
+    __tablename__ = "commits"
+    
+    commit_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    repo_id = Column(UUID(as_uuid=True), ForeignKey("repositories.repo_id"))
+    commit_hash = Column(String, index=True)
+    message = Column(Text, nullable=True)
+    author = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    repository = relationship("Repository", back_populates="commits")
+    scans = relationship("Scan", back_populates="commit")
 
 class LanguageEnum(str, enum.Enum):
     python = "python"
@@ -26,7 +63,9 @@ class SourceTypeEnum(str, enum.Enum):
     upload = "upload"
 
 class StatusEnum(str, enum.Enum):
+    analyzed = "analyzed"
     validated = "validated"
+    completed = "completed"
     rejected = "rejected"
 
 class Scan(Base):
@@ -34,6 +73,7 @@ class Scan(Base):
     
     scan_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.user_id"), nullable=True) # nullable for simple testing
+    commit_id = Column(UUID(as_uuid=True), ForeignKey("commits.commit_id"), nullable=True) # GitHub integration
     session_id = Column(String, nullable=True, index=True)  # anonymous browser session
     language = Column(Enum(LanguageEnum))
     source_type = Column(Enum(SourceTypeEnum))
@@ -41,9 +81,11 @@ class Scan(Base):
     status = Column(Enum(StatusEnum))
     validation_error = Column(Text, nullable=True)
     summary_text = Column(Text, nullable=True)
+    risk_score = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     user = relationship("User", back_populates="scans")
+    commit = relationship("Commit", back_populates="scans")
     findings = relationship("Finding", back_populates="scan")
     chat_sessions = relationship("ChatSession", back_populates="scan")
     token_usages = relationship("TokenUsage", back_populates="scan")
@@ -56,6 +98,8 @@ class KBDocument(Base):
     category = Column(String)
     owasp_id = Column(String, nullable=True)
     cwe_id = Column(String, nullable=True)
+    language = Column(String, nullable=True)
+    severity = Column(String, nullable=True)
     raw_content_ref = Column(Text)
     ingested_at = Column(DateTime, default=datetime.utcnow)
 
@@ -73,6 +117,8 @@ class KBChunk(Base):
     category = Column(String)
     owasp_id = Column(String, nullable=True)
     cwe_id = Column(String, nullable=True)
+    language = Column(String, nullable=True)
+    severity = Column(String, nullable=True)
     token_count = Column(Integer)
 
     document = relationship("KBDocument", back_populates="chunks")
@@ -88,15 +134,22 @@ class Finding(Base):
     tool = Column(String)
     rule_id = Column(String, nullable=True)
     severity = Column(String)
+    cvss_score = Column(Float, nullable=True)
     category = Column(String)
     owasp_type = Column(String, nullable=True)     # e.g. 'SQL Injection', 'XSS'
     title = Column(String)
     explanation = Column(Text, nullable=True)
     suggested_fix = Column(Text, nullable=True)
-    cwe_id = Column(String, nullable=True)
-    grounding_source = Column(String, nullable=True)
+    cwe_id = Column(String, nullable=True)         # e.g. 'CWE-89'
+    grounding_source = Column(String, nullable=True) # e.g. 'owasp_a01.md'
+    confidence_score = Column(String, nullable=True) # e.g. '96%'
+    detected_by = Column(String, nullable=True)      # e.g. '["SpotBugs", "LLM Validation"]'
+    original_code = Column(String, nullable=True)
+    validation_status = Column(String, nullable=True)
+    status = Column(String, default='OPEN')          # 'OPEN', 'FIXED', 'IGNORED'
 
     scan = relationship("Scan", back_populates="findings")
+    fixes = relationship("Fix", back_populates="finding")
 
 class ChatSession(Base):
     __tablename__ = "chat_sessions"
@@ -130,3 +183,25 @@ class TokenUsage(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     scan = relationship("Scan", back_populates="token_usages")
+
+class Fix(Base):
+    __tablename__ = "fixes"
+    
+    fix_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    finding_id = Column(UUID(as_uuid=True), ForeignKey("findings.finding_id"))
+    patched_code = Column(Text)
+    status = Column(String, default='PENDING') # 'PENDING', 'APPLIED', 'REJECTED'
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    finding = relationship("Finding", back_populates="fixes")
+    history = relationship("FixHistory", back_populates="fix")
+
+class FixHistory(Base):
+    __tablename__ = "fix_history"
+    
+    history_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    fix_id = Column(UUID(as_uuid=True), ForeignKey("fixes.fix_id"))
+    action = Column(String) # 'GENERATED', 'APPLIED_TO_PR', 'REJECTED'
+    timestamp = Column(DateTime, default=datetime.utcnow)
+
+    fix = relationship("Fix", back_populates="history")

@@ -9,9 +9,11 @@ pydantic
 pydantic-settings
 sentence-transformers==3.1.1
 langgraph
-langchain-anthropic
-langchain-core
-anthropic
+langchain-ollama
 bandit
 pylint
 defusedxml
+redis
+semgrep
+ruff
+langchain-google-genai

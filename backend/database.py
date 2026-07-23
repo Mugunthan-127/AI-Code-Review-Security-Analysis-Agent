@@ -26,6 +26,14 @@ def init_db():
     # Create all tables (no-op if they already exist)
     Base.metadata.create_all(bind=engine)
 
+    # Safe migration: add new enum values
+    with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+        try:
+            conn.execute(text("ALTER TYPE statusenum ADD VALUE IF NOT EXISTS 'analyzed'"))
+            conn.execute(text("ALTER TYPE statusenum ADD VALUE IF NOT EXISTS 'completed'"))
+        except Exception:
+            pass
+
     # Safe migration: add session_id column if missing (for existing DBs)
     with engine.connect() as conn:
         conn.execute(text("""
@@ -40,6 +48,10 @@ def init_db():
             ALTER TABLE scans
             ADD COLUMN IF NOT EXISTS summary_text TEXT
         """))
+        conn.execute(text("""
+            ALTER TABLE scans
+            ADD COLUMN IF NOT EXISTS risk_score INTEGER
+        """))
         # Safe migration: add agent_source and owasp_type columns on findings
         conn.execute(text("""
             ALTER TABLE findings
@@ -49,4 +61,25 @@ def init_db():
             ALTER TABLE findings
             ADD COLUMN IF NOT EXISTS owasp_type VARCHAR
         """))
+        conn.execute(text("ALTER TABLE findings ADD COLUMN IF NOT EXISTS confidence_score VARCHAR;"))
+        conn.execute(text("ALTER TABLE findings ADD COLUMN IF NOT EXISTS detected_by VARCHAR;"))
+        conn.execute(text("ALTER TABLE findings ADD COLUMN IF NOT EXISTS language VARCHAR;"))
+        conn.execute(text("ALTER TABLE findings ADD COLUMN IF NOT EXISTS severity VARCHAR;"))
+        conn.execute(text("ALTER TABLE findings ADD COLUMN IF NOT EXISTS cvss_score FLOAT;"))
+        conn.execute(text("ALTER TABLE findings ADD COLUMN IF NOT EXISTS original_code TEXT;"))
+        conn.execute(text("ALTER TABLE findings ADD COLUMN IF NOT EXISTS validation_status VARCHAR;"))
+        conn.execute(text("ALTER TABLE findings ADD COLUMN IF NOT EXISTS status VARCHAR DEFAULT 'OPEN';"))
+        
+        conn.execute(text("ALTER TABLE scans ADD COLUMN IF NOT EXISTS commit_id UUID;"))
+        
+        # Safe migration: add language and severity columns on kb_documents and kb_chunks
+        for table in ["kb_documents", "kb_chunks"]:
+            conn.execute(text(f"""
+                ALTER TABLE {table}
+                ADD COLUMN IF NOT EXISTS language VARCHAR
+            """))
+            conn.execute(text(f"""
+                ALTER TABLE {table}
+                ADD COLUMN IF NOT EXISTS severity VARCHAR
+            """))
         conn.commit()

@@ -6,9 +6,9 @@ An LLM enrichment pass improves title/explanation quality using the raw tool out
 """
 from typing import Dict, Any, List
 from .state import ScanState
-from services.python_analyzer import run_pylint
-from services.java_analyzer import run_pmd
-from langchain_anthropic import ChatAnthropic
+from services.python_analyzer import run_pylint, run_ruff, run_semgrep as run_python_semgrep
+from services.java_analyzer import run_pmd, run_checkstyle, run_semgrep as run_java_semgrep
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage, SystemMessage
 import json
 
@@ -86,17 +86,18 @@ def _map_pmd_severity(priority: str) -> str:
     return PMD_PRIORITY_MAP.get(str(priority), "low")
 
 
-def _run_pylint_with_rubric(code: str) -> List[Dict[str, Any]]:
-    """Run Pylint and apply the severity rubric to findings."""
-    raw = run_pylint(code)
+def _run_python_quality_tools(code: str) -> List[Dict[str, Any]]:
+    """Run Python quality tools (Pylint, Ruff, Semgrep) and apply severity rubric."""
+    raw_pylint = run_pylint(code)
+    raw_ruff = run_ruff(code)
+    raw_semgrep = run_python_semgrep(code, config="p/default")
+    
     enriched = []
-    for item in raw:
-        # item already has 'severity' from python_analyzer; override with rubric
+    # Pylint
+    for item in raw_pylint:
         rule_id = item.get("rule_id", "")
-        # We need the raw message type — re-derive from existing severity or use rule_id
         rubric_severity = _map_pylint_severity(
             rule_id, 
-            # Reverse-lookup msg_type from current severity for fallback
             {v: k for k, v in PYLINT_TYPE_MAP.items()}.get(item.get("severity", "low"), "convention")
         )
         enriched.append({
@@ -105,20 +106,53 @@ def _run_pylint_with_rubric(code: str) -> List[Dict[str, Any]]:
             "severity": rubric_severity,
             "category": "code_quality",
         })
-    return enriched
-
-
-def _run_pmd_with_rubric(code: str) -> List[Dict[str, Any]]:
-    """Run PMD and apply the severity rubric to findings."""
-    raw = run_pmd(code)
-    enriched = []
-    for item in raw:
+    # Ruff
+    for item in raw_ruff:
         enriched.append({
             **item,
             "agent_source": "code_analysis",
             "category": "code_quality",
-            # PMD already maps priority to severity in java_analyzer.py — keep it
         })
+    # Semgrep (filter for code_quality)
+    for item in raw_semgrep:
+        if item.get("category") == "code_quality":
+            enriched.append({
+                **item,
+                "agent_source": "code_analysis",
+                "category": "code_quality",
+            })
+    return enriched
+
+
+def _run_java_quality_tools(code: str) -> List[Dict[str, Any]]:
+    """Run Java quality tools (PMD, Checkstyle, Semgrep) and apply severity rubric."""
+    raw_pmd = run_pmd(code)
+    raw_checkstyle = run_checkstyle(code)
+    raw_semgrep = run_java_semgrep(code, config="p/default")
+    
+    enriched = []
+    # PMD
+    for item in raw_pmd:
+        enriched.append({
+            **item,
+            "agent_source": "code_analysis",
+            "category": "code_quality",
+        })
+    # Checkstyle
+    for item in raw_checkstyle:
+        enriched.append({
+            **item,
+            "agent_source": "code_analysis",
+            "category": "code_quality",
+        })
+    # Semgrep (filter for code_quality)
+    for item in raw_semgrep:
+        if item.get("category") == "code_quality":
+            enriched.append({
+                **item,
+                "agent_source": "code_analysis",
+                "category": "code_quality",
+            })
     return enriched
 
 
@@ -138,16 +172,16 @@ def code_analysis_node(state: ScanState) -> Dict[str, Any]:
 
     # Step 1 — Run the appropriate static tool with severity rubric applied
     if lang == "python":
-        raw_findings = _run_pylint_with_rubric(code)
+        raw_findings = _run_python_quality_tools(code)
     else:
-        raw_findings = _run_pmd_with_rubric(code)
+        raw_findings = _run_java_quality_tools(code)
 
     if not raw_findings:
         return {"code_analysis_findings": []}
 
     # Step 2 — LLM enrichment: improve title/explanation quality
     # (does NOT change severity or add new findings)
-    llm = ChatAnthropic(model="claude-3-5-haiku-20241022", temperature=0)
+    llm = ChatGoogleGenerativeAI(model="gemini-flash-latest", temperature=0)
 
     prompt = f"""You are an expert Code Quality Reviewer. Below is a list of raw code analysis findings from a static analysis tool run on the following {lang} code.
 
@@ -171,7 +205,10 @@ Return ONLY the JSON array. No markdown, no preamble."""
             SystemMessage(content="You return ONLY a valid JSON array. No markdown wrapping, no extra text."),
             HumanMessage(content=prompt)
         ])
-        content = response.content.strip()
+        raw_content = response.content
+        if isinstance(raw_content, list):
+            raw_content = raw_content[0].get("text", "") if isinstance(raw_content[0], dict) else str(raw_content[0])
+        content = str(raw_content).strip()
         # Strip any accidental markdown fences
         if content.startswith("```json"):
             content = content[7:]

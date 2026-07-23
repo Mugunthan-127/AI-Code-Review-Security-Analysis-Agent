@@ -67,3 +67,69 @@ def run_pylint(code: str) -> list:
     finally:
         if os.path.exists(temp_path):
             os.remove(temp_path)
+
+def run_ruff(code: str) -> list:
+    """Run ruff quality scanner on Python code."""
+    with tempfile.NamedTemporaryFile(suffix=".py", delete=False, mode="w", encoding="utf-8") as f:
+        f.write(code)
+        temp_path = f.name
+    try:
+        result = subprocess.run(
+            ["ruff", "check", "--output-format=json", temp_path],
+            capture_output=True, text=True
+        )
+        try:
+            data = json.loads(result.stdout)
+            findings = []
+            for item in data:
+                # Ruff usually just returns diagnostics without severity, we map by convention or default to medium
+                findings.append({
+                    "line": item.get("location", {}).get("row"),
+                    "column": item.get("location", {}).get("column"),
+                    "tool": "ruff",
+                    "rule_id": item.get("code"),
+                    "severity": "medium", # Defaulting to medium for Ruff, can be adjusted based on rule prefix
+                    "category": "code_quality",
+                    "title": item.get("code", "Code Smell"),
+                    "explanation": item.get("message", "")
+                })
+            return findings
+        except json.JSONDecodeError:
+            return []
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+
+def run_semgrep(code: str, config: str = "auto") -> list:
+    """Run semgrep scanner on code."""
+    with tempfile.NamedTemporaryFile(suffix=".py", delete=False, mode="w", encoding="utf-8") as f:
+        f.write(code)
+        temp_path = f.name
+    try:
+        result = subprocess.run(
+            ["semgrep", "--json", f"--config={config}", temp_path],
+            capture_output=True, text=True
+        )
+        try:
+            data = json.loads(result.stdout)
+            findings = []
+            for item in data.get("results", []):
+                extra = item.get("extra", {})
+                severity_raw = extra.get("severity", "WARNING").lower()
+                sev_map = {"error": "high", "warning": "medium", "info": "low"}
+                findings.append({
+                    "line": item.get("start", {}).get("line"),
+                    "column": item.get("start", {}).get("col"),
+                    "tool": "semgrep",
+                    "rule_id": item.get("check_id"),
+                    "severity": sev_map.get(severity_raw, "low"),
+                    "category": "security" if "security" in config else "code_quality",
+                    "title": item.get("check_id", "Semgrep Finding").split(".")[-1],
+                    "explanation": extra.get("message", "")
+                })
+            return findings
+        except json.JSONDecodeError:
+            return []
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)

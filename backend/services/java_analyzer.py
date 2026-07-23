@@ -116,3 +116,94 @@ def run_pmd(code: str) -> list:
         except Exception as e:
             print(f"PMD error: {e}")
             return []
+
+def run_checkstyle(code: str) -> list:
+    """Run checkstyle for java code quality."""
+    class_name = _extract_public_class_name(code)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        java_file = os.path.join(tmpdir, f"{class_name}.java")
+        with open(java_file, "w", encoding="utf-8") as f:
+            f.write(code)
+            
+        checkstyle_jar = os.getenv("CHECKSTYLE_JAR", "/opt/tools/checkstyle.jar")
+        config_file = os.getenv("CHECKSTYLE_CONFIG", "/sun_checks.xml")
+        report_out = os.path.join(tmpdir, "checkstyle_out.json")
+        
+        cmd = [
+            "java", "-jar", checkstyle_jar,
+            "-c", config_file,
+            "-f", "json",
+            "-o", report_out,
+            java_file
+        ]
+        
+        try:
+            subprocess.run(cmd, capture_output=True, text=True, timeout=20)
+            if not os.path.exists(report_out):
+                return []
+            
+            with open(report_out, "r", encoding="utf-8") as f:
+                import json
+                try:
+                    data = json.load(f)
+                except json.JSONDecodeError:
+                    return []
+                    
+            findings = []
+            for file_entry in data:
+                for error in file_entry.get('errors', []):
+                    severity_raw = error.get('severity', 'warning').lower()
+                    sev_map = {"error": "high", "warning": "medium", "info": "low"}
+                    findings.append({
+                        "line": error.get('line'),
+                        "column": error.get('column'),
+                        "tool": "checkstyle",
+                        "rule_id": error.get('source', '').split('.')[-1],
+                        "severity": sev_map.get(severity_raw, "low"),
+                        "category": "code_quality",
+                        "title": error.get('source', 'Checkstyle Issue').split('.')[-1],
+                        "explanation": error.get('message', '')
+                    })
+            return findings
+        except Exception as e:
+            print(f"Checkstyle error: {e}")
+            return []
+
+def run_semgrep(code: str, config: str = "auto") -> list:
+    """Run semgrep scanner on java code."""
+    class_name = _extract_public_class_name(code)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        java_file = os.path.join(tmpdir, f"{class_name}.java")
+        with open(java_file, "w", encoding="utf-8") as f:
+            f.write(code)
+            
+        try:
+            import json
+            result = subprocess.run(
+                ["semgrep", "--json", f"--config={config}", java_file],
+                capture_output=True, text=True, timeout=30
+            )
+            try:
+                data = json.loads(result.stdout)
+                findings = []
+                for item in data.get("results", []):
+                    extra = item.get("extra", {})
+                    severity_raw = extra.get("severity", "WARNING").lower()
+                    sev_map = {"error": "high", "warning": "medium", "info": "low"}
+                    findings.append({
+                        "line": item.get("start", {}).get("line"),
+                        "column": item.get("start", {}).get("col"),
+                        "tool": "semgrep",
+                        "rule_id": item.get("check_id"),
+                        "severity": sev_map.get(severity_raw, "low"),
+                        "category": "security" if "security" in config else "code_quality",
+                        "title": item.get("check_id", "Semgrep Finding").split(".")[-1],
+                        "explanation": extra.get("message", "")
+                    })
+                return findings
+            except json.JSONDecodeError:
+                return []
+        except Exception as e:
+            print(f"Semgrep error: {e}")
+            return []
+

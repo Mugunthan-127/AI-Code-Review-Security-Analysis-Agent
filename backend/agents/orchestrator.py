@@ -29,8 +29,13 @@ Architecture:
 from typing import Dict, Any, List
 from langgraph.graph import StateGraph, START, END
 from .state import ScanState
+from .validation import validation_node
 from .code_analysis import code_analysis_node
 from .security_vuln import security_vuln_node
+from .complexity import complexity_node
+from .dependency import dependency_node
+from .license import license_node
+from .risk_score import risk_score_node
 from .remediation import remediation_node
 from .pr_summary import pr_summary_node
 
@@ -55,20 +60,17 @@ def _severity_rank(finding: Dict[str, Any]) -> int:
 
 def merge_node(state: ScanState) -> Dict[str, Any]:
     """
-    Merge Node — combines Code Analysis and Security Vulnerability agent outputs.
-
-    Steps:
-    1. Concatenate both findings lists.
-    2. Deduplicate: if two findings share the same (file/line, rule_id), keep
-       the one with the higher severity. If equal severity, prefer 'security_vulnerability'.
-    3. Sort: by severity (Critical/High first) then by line number ascending.
+    Merge Node — combines outputs from all 5 parallel analysis agents.
     """
     code_findings = state.get("code_analysis_findings", []) or []
     sec_findings  = state.get("security_findings", []) or []
+    comp_findings = state.get("complexity_findings", []) or []
+    dep_findings  = state.get("dependency_findings", []) or []
+    lic_findings  = state.get("license_findings", []) or []
 
-    all_findings: List[Dict[str, Any]] = code_findings + sec_findings
+    all_findings: List[Dict[str, Any]] = code_findings + sec_findings + comp_findings + dep_findings + lic_findings
 
-    # Deduplication: key = (line, rule_id) — same tool+rule on same line
+    # Deduplication: key = (line, rule_id)
     seen: Dict[tuple, Dict[str, Any]] = {}
     for f in all_findings:
         key = (f.get("line"), f.get("rule_id", ""))
@@ -87,16 +89,18 @@ def merge_node(state: ScanState) -> Dict[str, Any]:
                     seen[key] = f
 
     merged = list(seen.values())
-
-    # Sort: by severity rank (ascending = most critical first), then by line number
     merged.sort(key=lambda f: (_severity_rank(f), f.get("line") or 0))
 
-    print(f"[Merge Node] Code Analysis: {len(code_findings)} findings | "
-          f"Security: {len(sec_findings)} findings | "
-          f"Merged (deduplicated): {len(merged)} findings")
-
+    print(f"[Merge Node] Deduplicated to {len(merged)} total findings")
     return {"findings": merged}
 
+
+def validation_router(state: ScanState):
+    """Route based on whether the code passed syntax validation."""
+    if state.get("is_valid", False):
+        return ["code_analysis", "security_vuln", "complexity", "dependency", "license"]
+    # If invalid, short-circuit the graph and exit immediately.
+    return END
 
 # ---------------------------------------------------------------------------
 # Build the LangGraph workflow
@@ -105,23 +109,35 @@ def merge_node(state: ScanState) -> Dict[str, Any]:
 workflow = StateGraph(ScanState)
 
 # Register all nodes
+workflow.add_node("validation",     validation_node)
 workflow.add_node("code_analysis",  code_analysis_node)
 workflow.add_node("security_vuln",  security_vuln_node)
+workflow.add_node("complexity",     complexity_node)
+workflow.add_node("dependency",     dependency_node)
+workflow.add_node("license",        license_node)
 workflow.add_node("merge",          merge_node)
+workflow.add_node("risk_score",     risk_score_node)
 workflow.add_node("remediation",    remediation_node)
 workflow.add_node("pr_summary",     pr_summary_node)
 
-# Fan-out: START → both agents in parallel
-workflow.add_edge(START, "code_analysis")
-workflow.add_edge(START, "security_vuln")
+# Start with validation
+workflow.add_edge(START, "validation")
 
-# Fan-in: both agents → merge node
+# Fan-out: conditionally launch 5 agents if valid
+workflow.add_conditional_edges("validation", validation_router)
+
+# Fan-in: all agents → merge node
 workflow.add_edge("code_analysis", "merge")
 workflow.add_edge("security_vuln", "merge")
+workflow.add_edge("complexity", "merge")
+workflow.add_edge("dependency", "merge")
+workflow.add_edge("license", "merge")
 
 # Sequential post-merge pipeline
-workflow.add_edge("merge",       "remediation")
+workflow.add_edge("merge",       "risk_score")
+workflow.add_edge("risk_score",  "remediation")
 workflow.add_edge("remediation", "pr_summary")
 workflow.add_edge("pr_summary",  END)
 
 app = workflow.compile()
+

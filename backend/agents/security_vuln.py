@@ -7,8 +7,9 @@ Uses RAG-grounded LLM enrichment to validate and explain each finding.
 import json
 from typing import Dict, Any, List, Optional
 from .state import ScanState
-from services.python_analyzer import run_bandit
-from services.java_analyzer import run_spotbugs
+from services.python_analyzer import run_bandit, run_semgrep as run_python_semgrep
+from services.java_analyzer import run_spotbugs, run_semgrep as run_java_semgrep
+from langchain_google_genai import ChatGoogleGenerativeAI
 from services.rag import retrieve
 from database import SessionLocal
 
@@ -135,6 +136,30 @@ def _classify_spotbugs_finding(finding: Dict[str, Any]) -> Dict[str, Any]:
     return finding
 
 
+def _classify_semgrep_finding(finding: Dict[str, Any]) -> Dict[str, Any]:
+    """Apply OWASP type classification to a Semgrep finding."""
+    # Semgrep rules are varied; we try to map based on rule_id if possible, or fallback.
+    rule_id = finding.get("rule_id", "").lower()
+    if "sql" in rule_id:
+        finding["owasp_type"] = "SQL Injection"
+        finding["cwe_id"] = "CWE-89"
+    elif "xss" in rule_id or "cross-site" in rule_id:
+        finding["owasp_type"] = "Cross-Site Scripting"
+        finding["cwe_id"] = "CWE-79"
+    elif "command" in rule_id or "exec" in rule_id:
+        finding["owasp_type"] = "Command Injection"
+        finding["cwe_id"] = "CWE-78"
+    elif "crypto" in rule_id or "md5" in rule_id or "sha1" in rule_id or "cipher" in rule_id:
+        finding["owasp_type"] = "Insecure Cryptography"
+        finding["cwe_id"] = "CWE-327"
+    elif "secret" in rule_id or "password" in rule_id or "credential" in rule_id:
+        finding["owasp_type"] = "Hardcoded Credentials"
+        finding["cwe_id"] = "CWE-798"
+    else:
+        finding.setdefault("owasp_type", "Security Vulnerability")
+    return finding
+
+
 def security_vuln_node(state: ScanState) -> Dict[str, Any]:
     """
     Security Vulnerability Agent node for LangGraph.
@@ -152,16 +177,48 @@ def security_vuln_node(state: ScanState) -> Dict[str, Any]:
     lang = state["language"]
 
     # Step 1 — Run static security tool
+    raw_findings = []
     if lang == "python":
-        raw_findings = run_bandit(code)
-        # Apply OWASP classification
-        raw_findings = [_classify_bandit_finding(f) for f in raw_findings]
+        bandit_findings = run_bandit(code)
+        bandit_findings = [_classify_bandit_finding(f) for f in bandit_findings]
+        
+        semgrep_findings = run_python_semgrep(code, config="p/security-audit")
+        semgrep_findings = [_classify_semgrep_finding(f) for f in semgrep_findings if f.get("category") == "security"]
+        
+        raw_findings = bandit_findings + semgrep_findings
     else:
-        raw_findings = run_spotbugs(code)
-        raw_findings = [_classify_spotbugs_finding(f) for f in raw_findings]
+        spotbugs_findings = run_spotbugs(code)
+        spotbugs_findings = [_classify_spotbugs_finding(f) for f in spotbugs_findings]
+        
+        semgrep_findings = run_java_semgrep(code, config="p/security-audit")
+        semgrep_findings = [_classify_semgrep_finding(f) for f in semgrep_findings if f.get("category") == "security"]
+        
+        raw_findings = spotbugs_findings + semgrep_findings
 
     if not raw_findings:
         return {"security_findings": []}
+
+    # Group findings by (line, owasp_type) to merge detected_by
+    grouped = {}
+    for f in raw_findings:
+        key = (f.get("line"), f.get("owasp_type"))
+        if key not in grouped:
+            grouped[key] = f
+            tool_name = "SpotBugs" if f.get("tool") == "spotbugs" else f.get("tool").capitalize() if f.get("tool") else "Unknown"
+            grouped[key]["detected_by"] = [tool_name]
+        else:
+            tool_name = "SpotBugs" if f.get("tool") == "spotbugs" else f.get("tool").capitalize() if f.get("tool") else "Unknown"
+            if tool_name not in grouped[key]["detected_by"]:
+                grouped[key]["detected_by"].append(tool_name)
+            # If incoming is higher severity, inherit it
+            existing_sev = grouped[key].get("severity", "low").lower()
+            incoming_sev = f.get("severity", "low").lower()
+            sev_rank = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
+            if sev_rank.get(incoming_sev, 4) < sev_rank.get(existing_sev, 4):
+                grouped[key]["severity"] = incoming_sev
+                grouped[key]["rule_id"] = f.get("rule_id")
+                
+    raw_findings = list(grouped.values())
 
     # Tag agent source on all raw findings
     for f in raw_findings:
@@ -175,8 +232,18 @@ def security_vuln_node(state: ScanState) -> Dict[str, Any]:
             owasp_type = finding.get("owasp_type", "")
             cwe_id = finding.get("cwe_id", "")
             rule_id = finding.get("rule_id", "")
+            category = finding.get("category", "")
+            severity = finding.get("severity", "low")
+            
             query = f"{lang} security vulnerability {owasp_type} {cwe_id} {rule_id} prevention"
-            chunks = retrieve(db, query, k=2)
+            chunks = retrieve(
+                db, 
+                query, 
+                k=2,
+                language=lang,
+                category=category if category != "security" else None, # The tool finding category is 'security', not very useful for KB filtering unless mapped, but passing it anyway or using owasp_type
+                severity=severity
+            )
             context = "\n\n".join(
                 [f"[{c.source_name}]: {c.chunk_text}" for c in chunks]
             )
@@ -185,7 +252,7 @@ def security_vuln_node(state: ScanState) -> Dict[str, Any]:
         db.close()
 
     # Step 3 — LLM enrichment with RAG grounding
-    llm = ChatAnthropic(model="claude-3-5-sonnet-20241022", temperature=0)
+    llm = ChatGoogleGenerativeAI(model="gemini-flash-latest", temperature=0)
 
     prompt = f"""You are a senior Security Auditor reviewing {lang} code. 
 You have been given raw findings from a static security scanner plus relevant 
@@ -198,21 +265,27 @@ RAW FINDINGS WITH KNOWLEDGE BASE CONTEXT:
 {json.dumps(raw_findings, indent=2)}
 
 Your task for EACH finding:
-1. Confirm it is a real vulnerability based on actual code context. If it is a clear false positive (e.g. the flagged code path is unreachable or the finding rule does not apply), drop it from the output.
+1. Validate if it is a real vulnerability based on actual code context. Set a new field 'validation_status' to exactly one of: "YES", "NO", or "MAYBE". Do NOT drop any findings from the output, even if you think they are false positives. You are a validator, not a filter.
 2. Improve 'title': concise, specific (max 12 words).
 3. Improve 'explanation': 3-5 sentences — what the vulnerability is, why it's dangerous, cite the Knowledge Base context where applicable.
 4. Set 'grounding_source' to the KB source filename most relevant to this finding (from _retrieved_context), or null if no KB context was relevant.
-5. Preserve: 'line', 'column', 'tool', 'rule_id', 'severity', 'category', 'agent_source', 'owasp_type', 'cwe_id'.
-6. Do NOT add new findings. Do NOT change 'agent_source'.
+5. Provide a 'confidence_score' as a percentage string (e.g., "96%") reflecting how certain you are in your validation status.
+6. Provide a 'cvss_score' (number between 0.0 and 10.0) reflecting a realistic CVSS v3 score for this vulnerability.
+7. Append "LLM Validation" to the existing 'detected_by' list.
+8. Preserve: 'line', 'column', 'tool', 'rule_id', 'severity', 'category', 'agent_source', 'owasp_type', 'cwe_id', and the updated 'detected_by' list.
+9. Do NOT add new findings. Do NOT change 'agent_source'.
 
-Return ONLY a JSON array of confirmed findings. No markdown, no preamble."""
+Return ONLY a JSON array of ALL original findings with the updated fields. No markdown, no preamble."""
 
     try:
         response = llm.invoke([
             SystemMessage(content="You return ONLY a valid JSON array. No markdown, no extra text."),
             HumanMessage(content=prompt)
         ])
-        content = response.content.strip()
+        raw_content = response.content
+        if isinstance(raw_content, list):
+            raw_content = raw_content[0].get("text", "") if isinstance(raw_content[0], dict) else str(raw_content[0])
+        content = str(raw_content).strip()
         if content.startswith("```json"):
             content = content[7:]
         if content.startswith("```"):

@@ -50,8 +50,53 @@ export default function ChatUI({ scanId, sessionId }) {
         ))}
         {loading && <div style={{opacity: 0.5}}>Thinking...</div>}
       </div>
+      
+      {/* AI Tutor Quick Actions */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
+        {[
+          "Explain Like Beginner",
+          "Generate Secure Version",
+          "Compare Old vs New",
+          "Which OWASP?",
+          "Why was this found?",
+          "Show Example",
+          "Fix specific line..."
+        ].map(action => (
+          <button 
+            key={action}
+            onClick={(e) => {
+              e.preventDefault();
+              if (action === "Fix specific line...") {
+                setInput("Fix line ");
+              } else {
+                // To avoid duplication, we mock the event object
+                const syntheticEvent = { preventDefault: () => {} };
+                setInput(action);
+                // In React, setting state and using it immediately is async, 
+                // so we pass the action directly to a helper or just let the effect run.
+                // For simplicity, we just set the input, user can hit send.
+              }
+            }}
+            style={{
+              padding: '6px 12px', 
+              background: 'rgba(255,255,255,0.1)', 
+              border: '1px solid rgba(255,255,255,0.2)', 
+              borderRadius: '16px', 
+              color: 'var(--txt-normal)', 
+              fontSize: '0.85em', 
+              cursor: 'pointer',
+              transition: 'background 0.2s'
+            }}
+            onMouseOver={(e) => e.target.style.background = 'rgba(255,255,255,0.2)'}
+            onMouseOut={(e) => e.target.style.background = 'rgba(255,255,255,0.1)'}
+          >
+            {action}
+          </button>
+        ))}
+      </div>
+
       <form onSubmit={sendMessage} style={{display: 'flex', gap: '8px'}}>
-        <input type="text" value={input} onChange={e=>setInput(e.target.value)} placeholder="Ask why a finding was reported..." style={{flex: 1, padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--surf-border)', background: 'rgba(0,0,0,0.2)', color: 'white'}} />
+        <input type="text" value={input} onChange={e=>setInput(e.target.value)} placeholder="Ask your AI Tutor about the findings..." style={{flex: 1, padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--surf-border)', background: 'rgba(0,0,0,0.2)', color: 'white'}} />
         <button type="submit" disabled={loading} style={{padding: '8px 16px', borderRadius: '8px', background: 'var(--primary)', color: 'black', fontWeight: 'bold', border: 'none', cursor: 'pointer'}}>Send</button>
       </form>
     </div>
