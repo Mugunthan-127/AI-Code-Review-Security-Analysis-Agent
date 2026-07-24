@@ -1,92 +1,131 @@
-# AI Code Review & Security Analysis Agent
+<div align="center">
+  
+# 🤖 AI Code Review & Security Analysis Agent
 
-![Agent Preview](https://via.placeholder.com/1200x600.png?text=AI+Code+Review+Agent)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![React](https://img.shields.io/badge/React-18-61dafb?logo=react&logoColor=black)](https://reactjs.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.104.1-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![LangGraph](https://img.shields.io/badge/LangGraph-Multi--Agent-orange)](https://python.langchain.com/docs/langgraph)
+[![ChromaDB](https://img.shields.io/badge/ChromaDB-Vector_Database-FF4B4B)](https://www.trychroma.com/)
+
+*An automated DevSecOps pipeline that acts as a senior security engineer, dynamically analyzing your code in real-time using parallel AI agents and an embedded vector knowledge base.*
+
+</div>
+
+---
+
+## 📖 Table of Contents
+- [Overview](#-overview)
+- [System Architecture](#-system-architecture)
+- [Core Features](#-core-features)
+- [Tech Stack](#-tech-stack)
+- [Getting Started](#-getting-started)
+- [Knowledge Base Tester](#-knowledge-base-tester)
+
+---
 
 ## 🚀 Overview
-The **AI Code Review & Security Analysis Agent** is a sophisticated, multi-agent platform designed to act as an automated DevSecOps pipeline. It analyzes Java and Python code in real-time, detecting security vulnerabilities, code quality issues, and architectural flaws. 
+Traditional static analysis tools (like Semgrep or SonarQube) often produce noisy false positives and struggle with uncompiled code snippets. This agent solves that by orchestrating **multiple specialized AI agents in parallel** via LangGraph. 
 
-By leveraging parallel AI agents (via **LangGraph**) and a built-in Knowledge Base (via **ChromaDB**), it grounds its security findings in official OWASP and CERT standards, ensuring the AI's recommendations are accurate, actionable, and free of hallucinations.
-
----
-
-## 🛠️ Complete Tech Stack
-
-### Frontend
-- **Framework:** React.js powered by Vite for lightning-fast hot reloading.
-- **Code Editor:** `@monaco-editor/react` (the engine behind VS Code) for syntax highlighting, line numbers, and a native IDE feel.
-- **Styling:** Custom Vanilla CSS utilizing CSS Grid/Flexbox for a responsive, dark-mode, glassmorphic UI.
-
-### Backend & Orchestration
-- **API Framework:** FastAPI (Python) for high-performance, async API endpoints.
-- **Orchestration:** LangGraph (State graph orchestration) to manage the parallel execution of multiple specialized AI agents.
-- **LLM Integration:** LangChain (`langchain-groq`) to interface with LLMs (Llama-3) for ultra-fast inference and complex reasoning.
-- **Static Analysis (Fallback):** Semgrep / SpotBugs integrations wrapped in LLM fallbacks for analyzing uncompiled or incomplete code snippets.
-
-### Database & RAG (Retrieval-Augmented Generation)
-- **Relational DB:** SQLite (managed via SQLAlchemy ORM) for storing scan history, findings, and metadata.
-- **Vector DB:** ChromaDB for storing embedded security guidelines, OWASP documents, and secure coding practices.
-- **Embeddings & Re-ranking:** HuggingFace `sentence-transformers`. Specifically uses a **Cross-Encoder** (`ms-marco-MiniLM-L-6-v2`) to mathematically re-rank vector search results, ensuring the AI only receives highly relevant context.
+When a vulnerability is detected, the agent queries a **ChromaDB Vector Database** loaded with official OWASP and CERT documentation. It mathematically re-ranks the guidelines using a **Cross-Encoder** and feeds the precise security context to the LLM, ensuring the suggested code fix is 100% accurate, hallucination-free, and enterprise-ready.
 
 ---
 
-## ✨ Core Capabilities
+## 🧠 System Architecture
 
-1. **Instant Code Triage:** Paste raw, uncompiled code snippets and get an immediate breakdown of security and quality flaws without needing a full build environment.
-2. **Multi-Agent Cross-Checking:** The system uses different agents for different tasks. The Code Quality agent focuses on logical bugs, while the Security agent focuses on vulnerabilities. They execute entirely in parallel.
-3. **Accurate Risk Scoring:** Dynamically grades the severity of the code based on the types of vulnerabilities found (Critical, High, Medium, Low).
-4. **Interactive Knowledge Base (KB Tester):** The built-in KB Tester allows developers to manually query the system's internal vector database to learn about vulnerabilities and see exactly what documentation the AI relies on.
-5. **Historical Tracking:** Every scan is saved to the SQLite database. The "History" tab allows developers to view past analyses, making it easy to track improvements over time.
-6. **Code Snippet Fixes:** Instead of just saying "You have SQL Injection", the app provides the exact rewritten code (e.g., how to use a `PreparedStatement` or parameterized query) to immediately resolve the issue.
+```mermaid
+graph TD
+    A[User Pastes Code] -->|React Frontend| B(FastAPI Backend)
+    B -->|Language Auto-Detection| C{LangGraph Orchestrator}
+    
+    C -->|Parallel Node| D[Security Agent]
+    C -->|Parallel Node| E[Code Quality Agent]
+    C -->|Parallel Node| F[Complexity Agent]
+    
+    D -->|Flags Vulnerability| G[(ChromaDB Vector Store)]
+    G -->|Returns Docs| H{Cross-Encoder Re-Ranker}
+    H -->|Injects Context| I[LLM Remediation Prompt]
+    I --> J
+    
+    E --> J[Orchestrator Merge Node]
+    F --> J
+    
+    J -->|Calculates Risk Score| K(SQLite History DB)
+    K --> L[React Finding Cards UI]
+    
+    style C fill:#f9f,stroke:#333,stroke-width:2px
+    style G fill:#ff9,stroke:#333,stroke-width:2px
+```
 
 ---
 
-## 🔄 The Architecture & Workflow
+## ✨ Core Features
 
-1. **Ingestion & Auto-Detection:** The user pastes code or uploads a file (.py or .java) in the React frontend. The FastAPI backend auto-detects the language.
-2. **Parallel Agent Execution:** The code is passed into the LangGraph state machine, which forks into multiple parallel agents (Security, Quality, Complexity).
-3. **RAG Context Enrichment:** If the Security Agent flags a potential vulnerability, it queries **ChromaDB** to find relevant security documents (e.g., OWASP A03 Injection guidelines). A **Cross-Encoder** re-ranks the chunks, and the highly-relevant security knowledge is injected into a final LLM prompt.
-4. **Aggregation & PR Summary:** A final Orchestrator merges the findings, calculates a Risk Score, and generates a structured Pull Request (PR) style summary.
-5. **Frontend Rendering:** The React UI renders a dynamic summary banner and individual Finding Cards pinpointing the exact lines of code with suggested fixes.
+*   **⚡ Parallel Multi-Agent Analysis:** Security, Code Quality, and Complexity metrics are evaluated simultaneously to drastically reduce analysis time.
+*   **🛡️ RAG Security Pipeline:** Vulnerabilities are checked against embedded OWASP Top 10 guidelines using a mathematically precise Retrieval-Augmented Generation (RAG) pipeline.
+*   **🧩 Automated Remediation:** Doesn't just tell you *what* is wrong; provides the exact rewritten, drop-in replacement code to fix the issue.
+*   **📊 Dynamic Risk Scoring:** Automatically grades severity levels (Critical, High, Medium, Low) and estimates the hours required to patch the application.
+*   **📚 Interactive KB Tester:** A dedicated UI tab allowing developers to manually query the internal ChromaDB to verify the security knowledge base.
+*   **💬 Conversational AI Assistant:** A floating chat UI that knows your scan history, allowing you to ask follow-up questions about the identified vulnerabilities.
 
 ---
 
-## 📦 Setup & Installation
+## 🛠️ Tech Stack
 
-### Prerequisites
+| Domain | Technology |
+| :--- | :--- |
+| **Frontend** | React.js, Vite, Monaco Editor, Vanilla CSS Grid/Flexbox |
+| **Backend API** | FastAPI, Uvicorn, Pydantic |
+| **Agent Orchestration** | LangGraph, LangChain, Groq API (Llama-3) |
+| **Databases** | SQLite (Relational), ChromaDB (Vector DB) |
+| **AI / NLP Models** | `sentence-transformers`, `ms-marco-MiniLM-L-6-v2` |
+
+---
+
+## 📦 Getting Started
+
+### 1. Prerequisites
 - Python 3.10+
 - Node.js 18+
-- A Groq API Key (for LLM inference)
+- [Groq API Key](https://console.groq.com/) for ultra-fast LLM inference.
 
-### Backend Setup
-1. Navigate to the backend directory:
-   ```bash
-   cd backend
-   ```
-2. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-3. Set your environment variables (create a `.env` file):
-   ```env
-   GROQ_API_KEY=your_groq_api_key_here
-   ```
-4. Start the FastAPI server:
-   ```bash
-   uvicorn main:app --reload --host 127.0.0.1 --port 8000
-   ```
+### 2. Backend Installation
+```bash
+# Navigate to the backend folder
+cd backend
 
-### Frontend Setup
-1. Navigate to the frontend directory:
-   ```bash
-   cd frontend
-   ```
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
-3. Start the Vite development server:
-   ```bash
-   npm run dev
-   ```
+# Install all Python dependencies
+pip install -r requirements.txt
 
-The application will be available at `http://localhost:5173`.
+# Create an environment file and add your API key
+echo "GROQ_API_KEY=your_groq_api_key_here" > .env
+
+# Start the FastAPI server
+uvicorn main:app --reload --host 127.0.0.1 --port 8000
+```
+> **Note:** The first time you run a security scan, the backend will download a ~90MB Cross-Encoder model. This takes about 30 seconds. Subsequent scans will execute in milliseconds.
+
+### 3. Frontend Installation
+```bash
+# Navigate to the frontend folder
+cd frontend
+
+# Install Node dependencies
+npm install
+
+# Start the Vite development server
+npm run dev
+```
+
+Visit `http://localhost:5173` in your browser. Paste your Java or Python code and click **Run Analysis**!
+
+---
+
+## 📚 Knowledge Base Tester
+
+To ensure absolute transparency, the application ships with a **KB Tester**. Instead of trusting a black-box AI, you can click the `📚 KB Tester` tab to directly query the ChromaDB vector database. Type in vulnerabilities like `"SQL Injection"` to see exactly which OWASP Markdown chunks the system uses to ground its code generation.
+
+---
+<div align="center">
+  <i>Built to bridge the gap between AI code generation and Enterprise Security.</i>
+</div>
