@@ -5,7 +5,7 @@ Runs after the merge node, operating on the unified findings list.
 import json
 from typing import Dict, Any
 from .state import ScanState
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_groq import ChatGroq
 from langchain_core.messages import HumanMessage, SystemMessage
 
 
@@ -22,7 +22,7 @@ def remediation_node(state: ScanState) -> Dict[str, Any]:
     if not findings:
         return {}
 
-    llm = ChatGoogleGenerativeAI(model="gemini-flash-latest", temperature=0)
+    llm = ChatGroq(model="llama-3.1-8b-instant", temperature=0)
 
     prompt = f"""You are a senior Code Remediation Expert. 
 I will provide source code and a list of findings (security vulnerabilities and code quality issues).

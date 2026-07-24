@@ -1,7 +1,7 @@
 import json
 from typing import Dict, Any
 from .state import ScanState
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_groq import ChatGroq
 from langchain_core.messages import HumanMessage, SystemMessage
 
 def pr_summary_node(state: ScanState) -> Dict[str, Any]:
@@ -11,8 +11,20 @@ def pr_summary_node(state: ScanState) -> Dict[str, Any]:
     if not findings:
         return {"summary_text": "No issues found. The code looks solid!"}
         
-    llm = ChatGoogleGenerativeAI(model="gemini-flash-latest", temperature=0)
-    
+    sec_count = sum(1 for f in findings if f.get("agent_source") == "security_vulnerability")
+    qual_count = sum(1 for f in findings if f.get("agent_source") == "code_analysis")
+    comp_count = sum(1 for f in findings if f.get("agent_source") == "complexity")
+    dep_count = sum(1 for f in findings if f.get("agent_source") == "dependency")
+
+    llm = ChatGroq(model="llama-3.1-8b-instant", temperature=0)
+
+    def plural(n): return f"{n} Issue{'s' if n != 1 else ''}"
+
+    breakdown_text = f"""- **Security:** {plural(sec_count)}
+- **Quality:** {plural(qual_count)}
+- **Complexity:** {plural(comp_count)}
+- **Dependency:** {plural(dep_count)}"""
+
     prompt = f"""You are a Senior Staff Engineer writing a PR review summary.
 Based on the following findings, write a highly structured, Copilot-style summary.
 Format your response exactly using these Markdown headers and nothing else. Do not add conversational filler.
@@ -21,17 +33,13 @@ Format your response exactly using these Markdown headers and nothing else. Do n
 [State Critical, High, Medium, or Low based on the highest severity finding]
 
 ### Breakdown
-- **Security:** [X] Issues
-- **Quality:** [X] Issues
-- **Complexity:** [X] Issues
-- **Dependency:** [X] Issues
-- **License:** [X] Issues
+{breakdown_text}
 
 ### Estimated Fix Time
 [Provide a realistic time estimate, e.g., '20 minutes', '2 hours', based on the complexity and number of findings]
 
 ### Priority
-[List the top 3-5 most important issues to fix, numbered 1, 2, 3...]
+[List the top 3-5 most important distinct issues to fix, numbered 1, 2, 3... Do not repeat the same issue.]
 
 ### Recommendation
 [Provide a 1-2 sentence high-level recommendation, e.g., 'Fix SQL Injection immediately before merging.']

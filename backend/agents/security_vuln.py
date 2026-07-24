@@ -9,7 +9,8 @@ from typing import Dict, Any, List, Optional
 from .state import ScanState
 from services.python_analyzer import run_bandit, run_semgrep as run_python_semgrep
 from services.java_analyzer import run_spotbugs, run_semgrep as run_java_semgrep
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_groq import ChatGroq
+from langchain_core.messages import HumanMessage, SystemMessage
 from services.rag import retrieve
 from database import SessionLocal
 
@@ -196,7 +197,7 @@ def security_vuln_node(state: ScanState) -> Dict[str, Any]:
         raw_findings = spotbugs_findings + semgrep_findings
 
     if not raw_findings:
-        return {"security_findings": []}
+        raw_findings = []
 
     # Group findings by (line, owasp_type) to merge detected_by
     grouped = {}
@@ -252,7 +253,7 @@ def security_vuln_node(state: ScanState) -> Dict[str, Any]:
         db.close()
 
     # Step 3 — LLM enrichment with RAG grounding
-    llm = ChatGoogleGenerativeAI(model="gemini-flash-latest", temperature=0)
+    llm = ChatGroq(model="llama-3.1-8b-instant", temperature=0)
 
     prompt = f"""You are a senior Security Auditor reviewing {lang} code. 
 You have been given raw findings from a static security scanner plus relevant 
@@ -264,7 +265,7 @@ CODE:
 RAW FINDINGS WITH KNOWLEDGE BASE CONTEXT:
 {json.dumps(raw_findings, indent=2)}
 
-Your task for EACH finding:
+Your task for EACH raw finding (if any):
 1. Validate if it is a real vulnerability based on actual code context. Set a new field 'validation_status' to exactly one of: "YES", "NO", or "MAYBE". Do NOT drop any findings from the output, even if you think they are false positives. You are a validator, not a filter.
 2. Improve 'title': concise, specific (max 12 words).
 3. Improve 'explanation': 3-5 sentences — what the vulnerability is, why it's dangerous, cite the Knowledge Base context where applicable.
@@ -273,9 +274,12 @@ Your task for EACH finding:
 6. Provide a 'cvss_score' (number between 0.0 and 10.0) reflecting a realistic CVSS v3 score for this vulnerability.
 7. Append "LLM Validation" to the existing 'detected_by' list.
 8. Preserve: 'line', 'column', 'tool', 'rule_id', 'severity', 'category', 'agent_source', 'owasp_type', 'cwe_id', and the updated 'detected_by' list.
-9. Do NOT add new findings. Do NOT change 'agent_source'.
 
-Return ONLY a JSON array of ALL original findings with the updated fields. No markdown, no preamble."""
+9. IMPORTANT: If you spot any glaring security vulnerabilities in the code (e.g. SQL Injection, XSS, Command Injection) that are NOT listed in the RAW FINDINGS, you MUST add them as new findings.
+   - For new findings, set 'tool' to 'LLM', 'rule_id' to a descriptive name (e.g. 'llm-sql-injection'), 'severity' (critical/high/medium), 'owasp_type' (e.g. 'SQL Injection'), 'cwe_id', 'validation_status' to 'YES', 'detected_by' to ["LLM Security Review"], 'category' to 'security', and 'agent_source' to 'security_vulnerability'.
+   - Provide the line number, a title, explanation, cvss_score, and confidence_score just like the other findings.
+
+Return ONLY a JSON array of ALL original findings with the updated fields PLUS any new findings you identified. No markdown, no preamble."""
 
     try:
         response = llm.invoke([

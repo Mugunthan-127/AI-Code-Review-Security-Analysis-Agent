@@ -7,7 +7,7 @@ from services.validation import validate_code
 from services.rag import retrieve
 from pydantic import BaseModel, constr
 from typing import Optional
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_groq import ChatGroq
 from langchain_core.messages import SystemMessage, HumanMessage
 
 router = APIRouter()
@@ -15,11 +15,18 @@ router = APIRouter()
 
 class PasteSubmission(BaseModel):
     code: constr(min_length=1)
-    language: str
+    language: Optional[str] = None
     session_id: Optional[str] = None
 
 class FixRequest(BaseModel):
     finding_id: int
+
+def guess_language(code: str) -> str:
+    """Guess if the code is Java or Python based on simple heuristics."""
+    java_indicators = ['public class ', 'import java.', 'System.out.print', 'public static void main']
+    if any(ind in code for ind in java_indicators):
+        return LanguageEnum.java.value
+    return LanguageEnum.python.value
 
 
 def _run_orchestrator(db: Session, scan: Scan, code: str) -> dict:
@@ -97,6 +104,9 @@ def submit_paste(submission: PasteSubmission, db: Session = Depends(get_db)):
             "risk_score": 0,
             "findings": []
         }
+    # Always auto-detect language to override frontend default
+    submission.language = guess_language(submission.code)
+        
     if submission.language not in [LanguageEnum.python.value, LanguageEnum.java.value]:
         raise HTTPException(status_code=400, detail="Unsupported language. Must be 'python' or 'java'")
 
@@ -131,19 +141,21 @@ async def submit_upload(
     x_session_id: Optional[str] = Header(None),
     db: Session = Depends(get_db)
 ):
+    code_bytes = await file.read()
+    try:
+        code_str = code_bytes.decode('utf-8')
+    except UnicodeDecodeError:
+        raise HTTPException(status_code=400, detail="File must be valid UTF-8 encoded text.")
+
     filename = file.filename
     if filename.endswith(".py"):
         language = LanguageEnum.python
     elif filename.endswith(".java"):
         language = LanguageEnum.java
     else:
-        raise HTTPException(status_code=400, detail="Only .py and .java files are supported.")
-
-    code_bytes = await file.read()
-    try:
-        code_str = code_bytes.decode('utf-8')
-    except UnicodeDecodeError:
-        raise HTTPException(status_code=400, detail="File must be valid UTF-8 encoded text.")
+        # Fall back to automatic detection based on content
+        guessed = guess_language(code_str)
+        language = LanguageEnum(guessed)
 
     scan = Scan(
         language=language,
@@ -208,7 +220,7 @@ def apply_fix(scan_id: str, req: FixRequest, db: Session = Depends(get_db)):
     if not finding or not finding.suggested_fix:
         raise HTTPException(status_code=404, detail="Finding or suggested fix not found")
         
-    llm = ChatGoogleGenerativeAI(model="gemini-flash-latest", temperature=0)
+    llm = ChatGroq(model="llama-3.1-8b-instant", temperature=0)
     prompt = f"""You are an automated code patcher.
 Apply the following fix to the source code.
 

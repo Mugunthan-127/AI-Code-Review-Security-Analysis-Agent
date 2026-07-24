@@ -4,7 +4,7 @@ from database import get_db
 from models import Scan, ChatSession, ChatMessage, Finding
 from pydantic import BaseModel
 from typing import Optional, List
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_groq import ChatGroq
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 from services.rag import retrieve
 import json
@@ -45,7 +45,7 @@ def chat_with_scan(scan_id: str, req: ChatRequest, db: Session = Depends(get_db)
     rag_chunks = retrieve(db, req.message, k=3)
     context_text = "\n\n".join([f"[{c.source_name}]: {c.chunk_text}" for c in rag_chunks])
     
-    llm = ChatGoogleGenerativeAI(model="gemini-flash-latest", temperature=0.7)
+    llm = ChatGroq(model="llama-3.1-8b-instant", temperature=0.7)
     
     system_prompt = f"""You are an expert Security & Code Quality Intelligent Tutor.
 Your goal is to help the user understand the vulnerabilities and code quality issues in their code, not just fix it for them blindly.

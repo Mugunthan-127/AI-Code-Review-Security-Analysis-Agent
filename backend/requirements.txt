@@ -17,3 +17,5 @@ redis
 semgrep
 ruff
 langchain-google-genai
+chromadb
+langchain-groq

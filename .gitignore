@@ -29,3 +29,8 @@ Thumbs.db
 # Project specific
 data/kb_sources/*.txt
 # Keep .md files in kb_sources if they are part of the KB templates
+*.sqlite
+data/chroma_db/
+test_*.py
+test_*.java
+replace_groq.py

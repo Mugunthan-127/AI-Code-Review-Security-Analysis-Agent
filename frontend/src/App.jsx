@@ -338,29 +338,6 @@ function AgentStats({ findings, riskScore, history, scanId }) {
 
   return (
     <div className="agent-stats">
-      {/* Visual Risk Score Dashboard */}
-      {riskScore !== undefined && riskScore !== null && (
-        <div className="agent-stat-card" style={{ background: 'rgba(239,68,68,0.05)', border: '1px solid rgba(239,68,68,0.3)', width: '100%', flex: '1 1 100%', flexDirection: 'column', alignItems: 'flex-start', padding: '16px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', marginBottom: '8px' }}>
-            <span className="ast-label" style={{ fontWeight: 'bold' }}>Risk Score</span>
-            <span className="ast-count" style={{ color: riskScore > 70 ? '#ef4444' : riskScore > 30 ? '#f59e0b' : '#10b981' }}>{riskScore}%</span>
-          </div>
-          {/* Progress Bar */}
-          <div style={{ width: '100%', height: '12px', background: 'rgba(255,255,255,0.1)', borderRadius: '6px', overflow: 'hidden' }}>
-            <div style={{ 
-              width: `${riskScore}%`, 
-              height: '100%', 
-              background: riskScore > 70 ? '#ef4444' : riskScore > 30 ? '#f59e0b' : '#10b981',
-              transition: 'width 1s ease-in-out'
-            }} />
-          </div>
-          {trendText && (
-            <div style={{ marginTop: '12px', fontSize: '0.85rem', color: trendColor }}>
-              {trendText}
-            </div>
-          )}
-        </div>
-      )}
 
       {/* Category Charts */}
       <div className="agent-stat-card agent-stat-sec">
@@ -424,8 +401,8 @@ function HistoryItem({ item }) {
   const status = item?.status || 'unknown'
   const lang = item?.language || 'unknown'
   const source = item?.source_type || 'unknown'
-  const ok = status === 'validated'
-  const isFailed = status === 'failed'
+  const ok = status === 'validated' || status === 'completed'
+  const isFailed = status === 'failed' || status === 'rejected'
   const langIcon = lang.toLowerCase() === 'python' ? '🐍' : (lang.toLowerCase() === 'java' ? '☕' : '📄')
   const srcIcon = source === 'upload' ? '📂' : '📝'
 
@@ -483,7 +460,7 @@ export default function App() {
   const summary     = result?.summary_text
   const scanId      = result?.scan_id
   const riskScore   = result?.risk_score
-  const isValid     = result?.status === 'validated' && rawFindings.length === 0
+  const isValid     = (result?.status === 'validated' || result?.status === 'completed') && rawFindings.length === 0
 
   // Apply filters
   const visibleFindings = rawFindings.filter(f => {
@@ -541,7 +518,6 @@ export default function App() {
   const qualityCount = rawFindings.filter(f => f.agent_source === 'code_analysis').length
   const compCount    = rawFindings.filter(f => f.agent_source === 'complexity').length
   const depCount     = rawFindings.filter(f => f.agent_source === 'dependency').length
-  const licCount     = rawFindings.filter(f => f.agent_source === 'license').length
 
   return (
     <>
@@ -585,12 +561,7 @@ export default function App() {
               <button id="tab-upload" className={`ptab ${tab === 'upload' ? 'ptab-on' : ''}`} onClick={() => setTab('upload')}>
                 <span>📂</span> Upload File
               </button>
-              {tab === 'paste' && (
-                <select id="lang-selector" className="lang-sel" value={lang} onChange={e => setLang(e.target.value)}>
-                  <option value="python">🐍 Python</option>
-                  <option value="java">☕ Java</option>
-                </select>
-              )}
+
             </div>
 
             {tab === 'paste' ? (
@@ -645,11 +616,6 @@ export default function App() {
                   <div className="par-lane"><div className="par-dot par-dot-active" /><span>Security</span></div>
                   <div className="par-lane"><div className="par-dot par-dot-active" /><span>Complexity</span></div>
                   <div className="par-lane"><div className="par-dot par-dot-active" /><span>Dependency</span></div>
-                  <div className="par-lane"><div className="par-dot par-dot-active" /><span>License</span></div>
-                </div>
-                <div style={{ textAlign: 'center', color: 'var(--txt-muted)' }}>⇣ Merge ⇣</div>
-                <div style={{ display: 'flex', justifyContent: 'center' }}>
-                  <div className="par-lane"><div className="par-dot par-dot-active" /><span>Risk Score</span><div className="par-pulse" /></div>
                 </div>
               </div>
             )}
@@ -743,7 +709,6 @@ export default function App() {
                           { v: 'code_analysis',          label: `🔍 (${qualityCount})` },
                           { v: 'complexity',             label: `🧠 (${compCount})` },
                           { v: 'dependency',             label: `📦 (${depCount})` },
-                          { v: 'license',                label: `⚖️ (${licCount})` },
                         ].map(({ v, label }) => (
                           <button
                             key={v}

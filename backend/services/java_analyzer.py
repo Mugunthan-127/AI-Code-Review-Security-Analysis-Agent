@@ -179,8 +179,9 @@ def run_semgrep(code: str, config: str = "auto") -> list:
             
         try:
             import json
+            import sys
             result = subprocess.run(
-                ["semgrep", "--json", f"--config={config}", java_file],
+                [sys.executable, "-m", "semgrep", "--json", f"--config={config}", java_file],
                 capture_output=True, text=True, timeout=30
             )
             try:

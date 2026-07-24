@@ -8,7 +8,7 @@ from typing import Dict, Any, List
 from .state import ScanState
 from services.python_analyzer import run_pylint, run_ruff, run_semgrep as run_python_semgrep
 from services.java_analyzer import run_pmd, run_checkstyle, run_semgrep as run_java_semgrep
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_groq import ChatGroq
 from langchain_core.messages import HumanMessage, SystemMessage
 import json
 
@@ -181,7 +181,7 @@ def code_analysis_node(state: ScanState) -> Dict[str, Any]:
 
     # Step 2 — LLM enrichment: improve title/explanation quality
     # (does NOT change severity or add new findings)
-    llm = ChatGoogleGenerativeAI(model="gemini-flash-latest", temperature=0)
+    llm = ChatGroq(model="llama-3.1-8b-instant", temperature=0)
 
     prompt = f"""You are an expert Code Quality Reviewer. Below is a list of raw code analysis findings from a static analysis tool run on the following {lang} code.
 

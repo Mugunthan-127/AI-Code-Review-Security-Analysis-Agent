@@ -1,8 +1,19 @@
 import threading
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from database import init_db, SessionLocal
 from routers import submission, kb, chat, reports
+
+# Load .env manually to ensure GROQ_API_KEY and other keys are available
+env_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env')
+if os.path.exists(env_path):
+    with open(env_path, 'r', encoding='utf-8') as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith('#'):
+                key, val = line.split('=', 1)
+                os.environ.setdefault(key.strip(), val.strip())
 
 app = FastAPI(title="AI Code Review & Security Analysis Agent – Milestone 2")
 

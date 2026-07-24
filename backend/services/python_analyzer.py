@@ -2,6 +2,7 @@ import tempfile
 import os
 import subprocess
 import json
+import sys
 
 def run_bandit(code: str) -> list:
     """Run bandit security scanner on Python code."""
@@ -10,7 +11,7 @@ def run_bandit(code: str) -> list:
         temp_path = f.name
     try:
         result = subprocess.run(
-            ["bandit", "-f", "json", temp_path],
+            [sys.executable, "-m", "bandit", "-f", "json", temp_path],
             capture_output=True, text=True
         )
         try:
@@ -38,11 +39,11 @@ def run_bandit(code: str) -> list:
 def run_pylint(code: str) -> list:
     """Run pylint quality scanner on Python code."""
     with tempfile.NamedTemporaryFile(suffix=".py", delete=False, mode="w", encoding="utf-8") as f:
-        f.write(code)
+        f.write(code.replace('\r', ''))
         temp_path = f.name
     try:
         result = subprocess.run(
-            ["pylint", "--output-format=json", temp_path],
+            [sys.executable, "-m", "pylint", "--output-format=json", temp_path],
             capture_output=True, text=True
         )
         try:
@@ -71,11 +72,11 @@ def run_pylint(code: str) -> list:
 def run_ruff(code: str) -> list:
     """Run ruff quality scanner on Python code."""
     with tempfile.NamedTemporaryFile(suffix=".py", delete=False, mode="w", encoding="utf-8") as f:
-        f.write(code)
+        f.write(code.replace('\r', ''))
         temp_path = f.name
     try:
         result = subprocess.run(
-            ["ruff", "check", "--output-format=json", temp_path],
+            [sys.executable, "-m", "ruff", "check", "--output-format=json", temp_path],
             capture_output=True, text=True
         )
         try:
@@ -103,11 +104,11 @@ def run_ruff(code: str) -> list:
 def run_semgrep(code: str, config: str = "auto") -> list:
     """Run semgrep scanner on code."""
     with tempfile.NamedTemporaryFile(suffix=".py", delete=False, mode="w", encoding="utf-8") as f:
-        f.write(code)
+        f.write(code.replace('\r', ''))
         temp_path = f.name
     try:
         result = subprocess.run(
-            ["semgrep", "--json", f"--config={config}", temp_path],
+            [sys.executable, "-m", "semgrep", "--json", f"--config={config}", temp_path],
             capture_output=True, text=True
         )
         try:

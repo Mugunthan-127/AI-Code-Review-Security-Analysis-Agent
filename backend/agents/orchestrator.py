@@ -34,10 +34,9 @@ from .code_analysis import code_analysis_node
 from .security_vuln import security_vuln_node
 from .complexity import complexity_node
 from .dependency import dependency_node
-from .license import license_node
-from .risk_score import risk_score_node
 from .remediation import remediation_node
 from .pr_summary import pr_summary_node
+from .risk_score import risk_score_node
 
 
 # ---------------------------------------------------------------------------
@@ -66,9 +65,8 @@ def merge_node(state: ScanState) -> Dict[str, Any]:
     sec_findings  = state.get("security_findings", []) or []
     comp_findings = state.get("complexity_findings", []) or []
     dep_findings  = state.get("dependency_findings", []) or []
-    lic_findings  = state.get("license_findings", []) or []
 
-    all_findings: List[Dict[str, Any]] = code_findings + sec_findings + comp_findings + dep_findings + lic_findings
+    all_findings: List[Dict[str, Any]] = code_findings + sec_findings + comp_findings + dep_findings
 
     # Deduplication: key = (line, rule_id)
     seen: Dict[tuple, Dict[str, Any]] = {}
@@ -98,7 +96,7 @@ def merge_node(state: ScanState) -> Dict[str, Any]:
 def validation_router(state: ScanState):
     """Route based on whether the code passed syntax validation."""
     if state.get("is_valid", False):
-        return ["code_analysis", "security_vuln", "complexity", "dependency", "license"]
+        return ["code_analysis", "security_vuln", "complexity", "dependency"]
     # If invalid, short-circuit the graph and exit immediately.
     return END
 
@@ -114,7 +112,6 @@ workflow.add_node("code_analysis",  code_analysis_node)
 workflow.add_node("security_vuln",  security_vuln_node)
 workflow.add_node("complexity",     complexity_node)
 workflow.add_node("dependency",     dependency_node)
-workflow.add_node("license",        license_node)
 workflow.add_node("merge",          merge_node)
 workflow.add_node("risk_score",     risk_score_node)
 workflow.add_node("remediation",    remediation_node)
@@ -131,7 +128,6 @@ workflow.add_edge("code_analysis", "merge")
 workflow.add_edge("security_vuln", "merge")
 workflow.add_edge("complexity", "merge")
 workflow.add_edge("dependency", "merge")
-workflow.add_edge("license", "merge")
 
 # Sequential post-merge pipeline
 workflow.add_edge("merge",       "risk_score")
