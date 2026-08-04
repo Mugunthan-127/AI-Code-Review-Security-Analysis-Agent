@@ -1,0 +1,339 @@
+{
+  "total": 45,
+  "passed": 26,
+  "failed": 18,
+  "skipped": 1,
+  "pass_rate": "58%",
+  "results": [
+    {
+      "module": "Pre",
+      "test": "Backend /health",
+      "status": "[PASS]",
+      "detail": "Status: ok"
+    },
+    {
+      "module": "M1",
+      "test": "Paste Python code",
+      "status": "[FAIL]",
+      "detail": "HTTP None"
+    },
+    {
+      "module": "M1",
+      "test": "Paste Java code",
+      "status": "[FAIL]",
+      "detail": "HTTP None: "
+    },
+    {
+      "module": "M1",
+      "test": "Upload Python file (.py)",
+      "status": "[FAIL]",
+      "detail": "HTTP None"
+    },
+    {
+      "module": "M1",
+      "test": "Upload Java file (.java)",
+      "status": "[FAIL]",
+      "detail": "HTTP None"
+    },
+    {
+      "module": "M1",
+      "test": "Empty code input rejected",
+      "status": "[PASS]",
+      "detail": "Correctly rejected"
+    },
+    {
+      "module": "M1",
+      "test": "Unsupported .txt file handled",
+      "status": "[PASS]",
+      "detail": "Status: rejected"
+    },
+    {
+      "module": "M2",
+      "test": "Java detection (public class)",
+      "status": "[FAIL]",
+      "detail": ""
+    },
+    {
+      "module": "M2",
+      "test": "Python detection (print)",
+      "status": "[FAIL]",
+      "detail": ""
+    },
+    {
+      "module": "M3",
+      "test": "Python indentation error detected",
+      "status": "[PASS]",
+      "detail": "syntax_errors=1, status=rejected"
+    },
+    {
+      "module": "M3",
+      "test": "Valid Python passes validation",
+      "status": "[FAIL]",
+      "detail": ""
+    },
+    {
+      "module": "M3",
+      "test": "Valid Java passes validation",
+      "status": "[FAIL]",
+      "detail": ""
+    },
+    {
+      "module": "M3",
+      "test": "Java missing semicolon detected",
+      "status": "[PASS]",
+      "detail": "status=rejected, errors=1"
+    },
+    {
+      "module": "M4",
+      "test": "Python security scan",
+      "status": "[FAIL]",
+      "detail": "HTTP None"
+    },
+    {
+      "module": "M5",
+      "test": "Code quality scan",
+      "status": "[FAIL]",
+      "detail": "HTTP None"
+    },
+    {
+      "module": "M6",
+      "test": "Complexity scan",
+      "status": "[FAIL]",
+      "detail": ""
+    },
+    {
+      "module": "M7",
+      "test": "Risk score test (clean code)",
+      "status": "[FAIL]",
+      "detail": ""
+    },
+    {
+      "module": "M7",
+      "test": "Risk score (vulnerable code)",
+      "status": "[FAIL]",
+      "detail": ""
+    },
+    {
+      "module": "M7",
+      "test": "False positive risk exclusion",
+      "status": "[INFO]",
+      "detail": "Validated by validation_status=NO filter in risk_score_node"
+    },
+    {
+      "module": "M8",
+      "test": "PR Summary scan",
+      "status": "[FAIL]",
+      "detail": ""
+    },
+    {
+      "module": "M8",
+      "test": "LLM failure fallback (try/except)",
+      "status": "[PASS]",
+      "detail": "Code has fallback dict in except block"
+    },
+    {
+      "module": "M9",
+      "test": "Remediation check",
+      "status": "[FAIL]",
+      "detail": ""
+    },
+    {
+      "module": "M11",
+      "test": "ChromaDB collection loads",
+      "status": "[PASS]",
+      "detail": "Total chunks: 32"
+    },
+    {
+      "module": "M11",
+      "test": "Embeddings stored in ChromaDB",
+      "status": "[PASS]",
+      "detail": "32 chunks indexed"
+    },
+    {
+      "module": "M10",
+      "test": "RAG: 'SQL Injection' \u2192 relevant chunks",
+      "status": "[PASS]",
+      "detail": "3 chunks, relevant=yes, top_score=5.109"
+    },
+    {
+      "module": "M10",
+      "test": "RAG: 'XSS' \u2192 relevant chunks",
+      "status": "[PASS]",
+      "detail": "3 chunks, relevant=yes, top_score=2.149"
+    },
+    {
+      "module": "M10",
+      "test": "RAG: 'JWT Security' \u2192 relevant chunks",
+      "status": "[PASS]",
+      "detail": "3 chunks, relevant=yes, top_score=3.113"
+    },
+    {
+      "module": "M10",
+      "test": "RAG: 'Random text xyz123' \u2192 no relevant results expected",
+      "status": "[PASS]",
+      "detail": "3 results returned (may be low-score)"
+    },
+    {
+      "module": "M11",
+      "test": "Cross-Encoder re-ranking",
+      "status": "[INFO]",
+      "detail": "Used in retrieve() \u2014 scores visible in RAG results above"
+    },
+    {
+      "module": "M11",
+      "test": "Top-K retrieval",
+      "status": "[PASS]",
+      "detail": "k=3 used in tests above"
+    },
+    {
+      "module": "M12",
+      "test": "SQLite: scans saved to history",
+      "status": "[PASS]",
+      "detail": "20 scans in history for test session"
+    },
+    {
+      "module": "M13",
+      "test": "History: newest scan first",
+      "status": "[PASS]",
+      "detail": "Latest: 2026-07-31T16:26:16"
+    },
+    {
+      "module": "M13",
+      "test": "History: status types seen: {'analyzed', 'rejected', 'completed'}",
+      "status": "[PASS]",
+      "detail": ""
+    },
+    {
+      "module": "M13",
+      "test": "History: pagination (limit=2)",
+      "status": "[PASS]",
+      "detail": "Returned 2 items"
+    },
+    {
+      "module": "M12",
+      "test": "SQLite: all fields returned",
+      "status": "[PASS]",
+      "detail": "All fields present"
+    },
+    {
+      "module": "M14",
+      "test": "Chat: no scan_id available",
+      "status": "[SKIP]",
+      "detail": ""
+    },
+    {
+      "module": "M15",
+      "test": "Loading animation (frontend state)",
+      "status": "[INFO]",
+      "detail": "Visible in browser during scan \u2014 set via loading state in App.jsx"
+    },
+    {
+      "module": "M15",
+      "test": "Expand/Collapse cards",
+      "status": "[INFO]",
+      "detail": "FindingCard uses open state toggle \u2014 verified by code review"
+    },
+    {
+      "module": "M15",
+      "test": "Export button present",
+      "status": "[INFO]",
+      "detail": "Rendered when scanId is available \u2014 verified in App.jsx line 829"
+    },
+    {
+      "module": "M15",
+      "test": "Filter bar (agent/severity)",
+      "status": "[INFO]",
+      "detail": "filterAgent/filterSev state hooks present \u2014 verified"
+    },
+    {
+      "module": "M15",
+      "test": "Dark mode",
+      "status": "[INFO]",
+      "detail": "VS-dark theme in Monaco editor; dark CSS vars throughout"
+    },
+    {
+      "module": "M15",
+      "test": "Frontend server running",
+      "status": "[PASS]",
+      "detail": "HTTP 200"
+    },
+    {
+      "module": "M16",
+      "test": "10-line code",
+      "status": "[FAIL]",
+      "detail": ""
+    },
+    {
+      "module": "M16",
+      "test": "100-line code response time",
+      "status": "[PASS]",
+      "detail": "13.6s"
+    },
+    {
+      "module": "M16",
+      "test": "300-line code response time",
+      "status": "[PASS]",
+      "detail": "22.9s"
+    },
+    {
+      "module": "M16",
+      "test": "Performance summary",
+      "status": "[INFO]",
+      "detail": "10-line=3.9s, 100-line=13.6s, 300-line=22.9s"
+    },
+    {
+      "module": "M17",
+      "test": "Invalid scan_id returns 404",
+      "status": "[PASS]",
+      "detail": "HTTP 404"
+    },
+    {
+      "module": "M17",
+      "test": "Invalid scan_id for export returns 404",
+      "status": "[PASS]",
+      "detail": "HTTP 404"
+    },
+    {
+      "module": "M17",
+      "test": "Invalid JSON body returns 422",
+      "status": "[PASS]",
+      "detail": "HTTP 422"
+    },
+    {
+      "module": "M17",
+      "test": "Empty code returns rejected/422",
+      "status": "[PASS]",
+      "detail": "HTTP 422 \u2014 Pydantic validation"
+    },
+    {
+      "module": "M17",
+      "test": "Malformed UUID returns 422/500",
+      "status": "[PASS]",
+      "detail": "HTTP 500"
+    },
+    {
+      "module": "M17",
+      "test": "SQLite locked graceful handling",
+      "status": "[INFO]",
+      "detail": "SQLAlchemy handles concurrent writes via connection pool"
+    },
+    {
+      "module": "M17",
+      "test": "LLM timeout handling",
+      "status": "[INFO]",
+      "detail": "try/except in all agent nodes \u2014 fallback returns raw findings"
+    },
+    {
+      "module": "M18",
+      "test": "Security regression comparison",
+      "status": "[FAIL]",
+      "detail": ""
+    },
+    {
+      "module": "M19",
+      "test": "E2E flow",
+      "status": "[FAIL]",
+      "detail": "HTTP None: "
+    }
+  ]
+}

@@ -29,4 +29,5 @@ class ScanState(TypedDict):
 
     # ── Downstream agent outputs ───────────────────────────────────────────
     risk_score: Optional[int]
+    risk_percentage: Optional[int]
     summary_text: Optional[str]

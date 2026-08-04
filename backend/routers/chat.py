@@ -8,6 +8,7 @@ from langchain_groq import ChatGroq
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 from services.rag import retrieve
 import json
+import uuid
 
 router = APIRouter()
 
@@ -17,12 +18,14 @@ class ChatRequest(BaseModel):
 
 @router.post("/{scan_id}/chat")
 def chat_with_scan(scan_id: str, req: ChatRequest, db: Session = Depends(get_db)):
-    scan = db.query(Scan).filter(Scan.scan_id == scan_id).first()
+    scan_uuid = uuid.UUID(scan_id)
+    scan = db.query(Scan).filter(Scan.scan_id == scan_uuid).first()
     if not scan:
         raise HTTPException(status_code=404, detail="Scan not found")
         
     if req.session_id:
-        chat_session = db.query(ChatSession).filter(ChatSession.session_id == req.session_id).first()
+        session_uuid = uuid.UUID(req.session_id)
+        chat_session = db.query(ChatSession).filter(ChatSession.session_id == session_uuid).first()
         if not chat_session:
             raise HTTPException(status_code=404, detail="Chat session not found")
     else:
@@ -36,7 +39,7 @@ def chat_with_scan(scan_id: str, req: ChatRequest, db: Session = Depends(get_db)
     
     past_messages = db.query(ChatMessage).filter(ChatMessage.session_id == chat_session.session_id).order_by(ChatMessage.created_at).all()
     
-    findings = db.query(Finding).filter(Finding.scan_id == scan_id).all()
+    findings = db.query(Finding).filter(Finding.scan_id == scan_uuid).all()
     findings_data = [
         {"title": f.title, "explanation": f.explanation, "suggested_fix": f.suggested_fix, "line": f.line, "severity": f.severity, "rule_id": f.rule_id, "tool": f.tool} 
         for f in findings
@@ -45,7 +48,7 @@ def chat_with_scan(scan_id: str, req: ChatRequest, db: Session = Depends(get_db)
     rag_chunks = retrieve(db, req.message, k=3)
     context_text = "\n\n".join([f"[{c.source_name}]: {c.chunk_text}" for c in rag_chunks])
     
-    llm = ChatGroq(model="llama-3.1-8b-instant", temperature=0.7)
+    llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0.7)
     
     system_prompt = f"""You are an expert Security & Code Quality Intelligent Tutor.
 Your goal is to help the user understand the vulnerabilities and code quality issues in their code, not just fix it for them blindly.
@@ -77,6 +80,8 @@ Guidelines:
             messages.append(HumanMessage(content=content_str))
         else:
             messages.append(AIMessage(content=content_str))
+    # Append the current user message (it was persisted to DB above, but not yet in messages list)
+    messages.append(HumanMessage(content=req.message))
             
     try:
         response = llm.invoke(messages)
@@ -92,7 +97,10 @@ Guidelines:
     db.add(ai_msg)
     db.commit()
     
+    citations = list(set([c.source_name for c in rag_chunks]))
+    
     return {
         "session_id": str(chat_session.session_id),
-        "reply": ai_text
+        "reply": ai_text,
+        "citations": citations
     }

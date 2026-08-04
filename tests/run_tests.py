@@ -5,9 +5,9 @@ import json
 # Add backend to path so we can import services
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'backend')))
 
-from services.python_analyzer import run_bandit
-from services.java_analyzer import run_pmd, run_spotbugs
-from agents.security_vuln import BANDIT_OWASP_MAP, SPOTBUGS_OWASP_MAP
+from services.python_analyzer import run_bandit  # type: ignore
+from services.java_analyzer import run_pmd, run_spotbugs  # type: ignore
+from agents.security_vuln import BANDIT_OWASP_MAP, SPOTBUGS_OWASP_MAP  # type: ignore
 
 def test_java_vulnerable():
     code = """package com.demo;

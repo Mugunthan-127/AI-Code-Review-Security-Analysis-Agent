@@ -11,6 +11,7 @@ from services.python_analyzer import run_bandit, run_semgrep as run_python_semgr
 from services.java_analyzer import run_spotbugs, run_semgrep as run_java_semgrep
 from langchain_groq import ChatGroq
 from langchain_core.messages import HumanMessage, SystemMessage
+from pydantic import BaseModel, Field
 from services.rag import retrieve
 from database import SessionLocal
 
@@ -253,7 +254,29 @@ def security_vuln_node(state: ScanState) -> Dict[str, Any]:
         db.close()
 
     # Step 3 — LLM enrichment with RAG grounding
-    llm = ChatGroq(model="llama-3.1-8b-instant", temperature=0)
+    class SecurityFinding(BaseModel):
+        line: Optional[int] = Field(None, description="Line number of the finding")
+        column_num: Optional[int] = Field(None, description="Column number")
+        tool: Optional[str] = Field(None, description="Tool that detected it")
+        rule_id: Optional[str] = Field(None, description="Rule ID")
+        severity: str = Field(description="Severity (critical, high, medium, low)")
+        category: str = Field(description="Category, usually 'security'")
+        agent_source: str = Field("security_vulnerability", description="Agent source")
+        owasp_type: Optional[str] = Field(None, description="OWASP vulnerability type")
+        cwe_id: Optional[str] = Field(None, description="CWE ID")
+        detected_by: List[str] = Field(description="List of tools that detected this")
+        validation_status: str = Field(description="YES, NO, or MAYBE")
+        title: str = Field(description="Concise, specific title (max 12 words)")
+        explanation: str = Field(description="3-5 sentences explaining the vulnerability and danger")
+        grounding_source: Optional[str] = Field(None, description="KB source filename if relevant")
+        confidence_score: str = Field(description="Confidence percentage, e.g., '96%'")
+        cvss_score: float = Field(description="CVSS v3 score between 0.0 and 10.0")
+
+    class SecurityFindingsList(BaseModel):
+        findings: List[SecurityFinding] = Field(description="List of validated and enriched security findings")
+
+    llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0)
+    structured_llm = llm.with_structured_output(SecurityFindingsList)
 
     prompt = f"""You are a senior Security Auditor reviewing {lang} code. 
 You have been given raw findings from a static security scanner plus relevant 
@@ -266,40 +289,28 @@ RAW FINDINGS WITH KNOWLEDGE BASE CONTEXT:
 {json.dumps(raw_findings, indent=2)}
 
 Your task for EACH raw finding (if any):
-1. Validate if it is a real vulnerability based on actual code context. Set a new field 'validation_status' to exactly one of: "YES", "NO", or "MAYBE". Do NOT drop any findings from the output, even if you think they are false positives. You are a validator, not a filter.
+1. Validate if it is a real vulnerability based on actual code context. Set 'validation_status' to exactly one of: "YES", "NO", or "MAYBE". Do NOT drop any findings from the output, even if you think they are false positives. You are a validator, not a filter.
 2. Improve 'title': concise, specific (max 12 words).
 3. Improve 'explanation': 3-5 sentences — what the vulnerability is, why it's dangerous, cite the Knowledge Base context where applicable.
 4. Set 'grounding_source' to the KB source filename most relevant to this finding (from _retrieved_context), or null if no KB context was relevant.
 5. Provide a 'confidence_score' as a percentage string (e.g., "96%") reflecting how certain you are in your validation status.
 6. Provide a 'cvss_score' (number between 0.0 and 10.0) reflecting a realistic CVSS v3 score for this vulnerability.
 7. Append "LLM Validation" to the existing 'detected_by' list.
-8. Preserve: 'line', 'column', 'tool', 'rule_id', 'severity', 'category', 'agent_source', 'owasp_type', 'cwe_id', and the updated 'detected_by' list.
+8. Preserve: 'line', 'column_num', 'tool', 'rule_id', 'severity', 'category', 'agent_source', 'owasp_type', 'cwe_id', and the updated 'detected_by' list.
 
-9. IMPORTANT: If you spot any glaring security vulnerabilities in the code (e.g. SQL Injection, XSS, Command Injection) that are NOT listed in the RAW FINDINGS, you MUST add them as new findings.
+9. IMPORTANT: If no security vulnerability exists in the code, return an empty array for findings. Do not invent issues. Do not classify coding style, design patterns, or best practices as security vulnerabilities. Security vulnerabilities MUST only include: SQL Injection, Command Injection, XSS, Path Traversal, Hardcoded Secrets, Weak Cryptography, Deserialization, SSRF, XXE, File Inclusion, Authentication flaws, and Authorization flaws. Everything else belongs in Quality.
+   - If you spot genuine vulnerabilities from the list above that are NOT in the RAW FINDINGS, you may add them as new findings.
    - For new findings, set 'tool' to 'LLM', 'rule_id' to a descriptive name (e.g. 'llm-sql-injection'), 'severity' (critical/high/medium), 'owasp_type' (e.g. 'SQL Injection'), 'cwe_id', 'validation_status' to 'YES', 'detected_by' to ["LLM Security Review"], 'category' to 'security', and 'agent_source' to 'security_vulnerability'.
    - Provide the line number, a title, explanation, cvss_score, and confidence_score just like the other findings.
-
-Return ONLY a JSON array of ALL original findings with the updated fields PLUS any new findings you identified. No markdown, no preamble."""
+"""
 
     try:
-        response = llm.invoke([
-            SystemMessage(content="You return ONLY a valid JSON array. No markdown, no extra text."),
+        response = structured_llm.invoke([
+            SystemMessage(content="You extract structured security findings."),
             HumanMessage(content=prompt)
         ])
-        raw_content = response.content
-        if isinstance(raw_content, list):
-            raw_content = raw_content[0].get("text", "") if isinstance(raw_content[0], dict) else str(raw_content[0])
-        content = str(raw_content).strip()
-        if content.startswith("```json"):
-            content = content[7:]
-        if content.startswith("```"):
-            content = content[3:]
-        if content.endswith("```"):
-            content = content[:-3]
-        enriched = json.loads(content.strip())
-        # Clean up the context field (not stored to DB)
+        enriched = [f.model_dump() for f in response.findings]
         for f in enriched:
-            f.pop("_retrieved_context", None)
             f["agent_source"] = "security_vulnerability"  # Always ensure set
         return {"security_findings": enriched}
     except Exception as e:

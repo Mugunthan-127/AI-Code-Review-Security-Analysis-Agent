@@ -68,25 +68,54 @@ def merge_node(state: ScanState) -> Dict[str, Any]:
 
     all_findings: List[Dict[str, Any]] = code_findings + sec_findings + comp_findings + dep_findings
 
-    # Deduplication: key = (line, rule_id)
-    seen: Dict[tuple, Dict[str, Any]] = {}
+    # Deduplication
+    seen: List[Dict[str, Any]] = []
     for f in all_findings:
-        key = (f.get("line"), f.get("rule_id", ""))
-        if key not in seen:
-            seen[key] = f
-        else:
-            existing = seen[key]
-            existing_rank = _severity_rank(existing)
-            incoming_rank = _severity_rank(f)
-            if incoming_rank < existing_rank:
-                # Incoming is more severe — replace
-                seen[key] = f
-            elif incoming_rank == existing_rank:
-                # Equal severity — prefer security_vulnerability source
-                if f.get("agent_source") == "security_vulnerability":
-                    seen[key] = f
+        duplicate_found = False
+        for existing in seen:
+            same_line = existing.get("line") == f.get("line")
+            same_owasp = existing.get("owasp_type") and existing.get("owasp_type") == f.get("owasp_type")
+            same_rule = existing.get("rule_id") and existing.get("rule_id") == f.get("rule_id")
+            
+            if same_line and (same_owasp or same_rule):
+                duplicate_found = True
+                
+                # Merge logic
+                existing_rank = _severity_rank(existing)
+                incoming_rank = _severity_rank(f)
+                
+                # Keep highest severity
+                if incoming_rank < existing_rank:
+                    existing["severity"] = f.get("severity")
+                    existing["title"] = f.get("title") or existing.get("title")
+                    existing["explanation"] = f.get("explanation") or existing.get("explanation")
+                    existing["agent_source"] = f.get("agent_source") or existing.get("agent_source")
+                    
+                # Merge detected_by
+                existing_detected = existing.get("detected_by", [])
+                if isinstance(existing_detected, str):
+                    existing_detected = [existing_detected]
+                incoming_detected = f.get("detected_by", [])
+                if isinstance(incoming_detected, str):
+                    incoming_detected = [incoming_detected]
+                
+                if not incoming_detected and f.get("tool"):
+                    incoming_detected = [f.get("tool").capitalize()]
+                
+                merged_detected = list(set(existing_detected + incoming_detected))
+                existing["detected_by"] = merged_detected
+                
+                break
+                
+        if not duplicate_found:
+            # Ensure detected_by is a list
+            if not f.get("detected_by") and f.get("tool"):
+                f["detected_by"] = [f.get("tool").capitalize()]
+            elif isinstance(f.get("detected_by"), str):
+                f["detected_by"] = [f.get("detected_by")]
+            seen.append(f)
 
-    merged = list(seen.values())
+    merged = seen
     merged.sort(key=lambda f: (_severity_rank(f), f.get("line") or 0))
 
     print(f"[Merge Node] Deduplicated to {len(merged)} total findings")

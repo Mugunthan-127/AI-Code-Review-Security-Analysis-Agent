@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 from models import Scan, Finding
 from datetime import datetime
+import json
 
 router = APIRouter()
 
@@ -14,14 +15,17 @@ SEVERITY_EMOJI = {
     "low":      "🔵",
 }
 
+import uuid
+
 @router.get("/{scan_id}/export/markdown")
 def export_markdown(scan_id: str, db: Session = Depends(get_db)):
     """Export a scan's findings as a markdown report."""
-    scan = db.query(Scan).filter(Scan.scan_id == scan_id).first()
+    scan_uuid = uuid.UUID(scan_id)
+    scan = db.query(Scan).filter(Scan.scan_id == scan_uuid).first()
     if not scan:
         raise HTTPException(status_code=404, detail="Scan not found")
 
-    findings = db.query(Finding).filter(Finding.scan_id == scan_id).all()
+    findings = db.query(Finding).filter(Finding.scan_id == scan_uuid).all()
 
     # Group findings by agent source
     sec_findings     = [f for f in findings if f.agent_source == "security_vulnerability"]
@@ -54,10 +58,34 @@ def export_markdown(scan_id: str, db: Session = Depends(get_db)):
     lines.append(f"| 🔵 Low Severity | {low_count} |")
     lines.append(f"")
 
-    # PR Summary
+    # PR Summary — parse JSON from pr_summary_node and render as readable markdown
     lines.append(f"## 📝 PR Review Summary")
     lines.append(f"")
-    lines.append(scan.summary_text or "_No summary generated._")
+    raw_summary = scan.summary_text or ""
+    try:
+        parsed = json.loads(raw_summary)
+        overview = parsed.get("executive_overview", "")
+        if overview:
+            lines.append(f"**Executive Overview:** {overview}")
+            lines.append(f"")
+        sev_breakdown = parsed.get("severity_breakdown", {})
+        if sev_breakdown:
+            sev_parts = ", ".join(f"{k.capitalize()}: {v}" for k, v in sev_breakdown.items() if v)
+            if sev_parts:
+                lines.append(f"**Severity Breakdown:** {sev_parts}")
+                lines.append(f"")
+        pf = parsed.get("prioritized_findings", [])
+        if pf:
+            lines.append(f"**Top Priorities:**")
+            for item in pf:
+                lines.append(f"- [{item.get('severity','').upper()}] **{item.get('title','')}** — {item.get('recommendation','')}")
+            lines.append(f"")
+    except (json.JSONDecodeError, TypeError):
+        # Fallback: render raw text if it's not JSON
+        if raw_summary:
+            lines.append(raw_summary)
+        else:
+            lines.append("_No summary generated._")
     lines.append(f"")
 
     # Security findings section

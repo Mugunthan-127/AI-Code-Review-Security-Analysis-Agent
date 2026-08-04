@@ -5,26 +5,37 @@ from models import Scan, LanguageEnum, SourceTypeEnum, StatusEnum
 import json
 from services.validation import validate_code
 from services.rag import retrieve
-from pydantic import BaseModel, constr
+from pydantic import BaseModel, Field
 from typing import Optional
 from langchain_groq import ChatGroq
 from langchain_core.messages import SystemMessage, HumanMessage
+import uuid
 
 router = APIRouter()
 
 
 class PasteSubmission(BaseModel):
-    code: constr(min_length=1)
+    code: str = Field(..., min_length=1)
     language: Optional[str] = None
     session_id: Optional[str] = None
 
 class FixRequest(BaseModel):
-    finding_id: int
+    finding_id: str
 
 def guess_language(code: str) -> str:
-    """Guess if the code is Java or Python based on simple heuristics."""
-    java_indicators = ['public class ', 'import java.', 'System.out.print', 'public static void main']
-    if any(ind in code for ind in java_indicators):
+    """Guess if the code is Java or Python based on simple heuristics.
+    Raises HTTPException(400) if both Java and Python markers are detected (mixed code).
+    """
+    java_indicators = ['public class ', 'import java.', 'System.out.print', 'public static void main', 'package ', 'import javax.']
+    python_indicators = ['def ', 'import os', 'import sys', 'print(', 'from ', 'elif ', 'except ', '#!/usr/bin/env python', '#!/usr/bin/python']
+    has_java = any(ind in code for ind in java_indicators)
+    has_python = any(ind in code for ind in python_indicators)
+    if has_java and has_python:
+        raise HTTPException(
+            status_code=400,
+            detail="Mixed code detected: the submission contains both Java and Python markers. Please submit only one language at a time."
+        )
+    if has_java:
         return LanguageEnum.java.value
     return LanguageEnum.python.value
 
@@ -74,6 +85,7 @@ def _run_orchestrator(db: Session, scan: Scan, code: str) -> dict:
                 cwe_id=f.get("cwe_id"),
                 grounding_source=f.get("grounding_source"),
                 confidence_score=f.get("confidence_score"),
+                validation_status=f.get("validation_status"),
                 detected_by=json.dumps(f.get("detected_by", [])) if isinstance(f.get("detected_by"), list) else f.get("detected_by")
             )
             db.add(finding_db)
@@ -88,6 +100,7 @@ def _run_orchestrator(db: Session, scan: Scan, code: str) -> dict:
         "syntax_errors": final_state.get("syntax_errors", []),
         "summary_text": scan.summary_text,
         "risk_score": final_state.get("risk_score"),
+        "risk_percentage": final_state.get("risk_percentage"),
         "findings": findings_out
     }
 
@@ -131,6 +144,7 @@ def submit_paste(submission: PasteSubmission, db: Session = Depends(get_db)):
         "syntax_errors": orchestrator_res["syntax_errors"],
         "summary_text": orchestrator_res["summary_text"],
         "risk_score": orchestrator_res["risk_score"],
+        "risk_percentage": orchestrator_res["risk_percentage"],
         "findings": orchestrator_res["findings"]
     }
 
@@ -177,6 +191,7 @@ async def submit_upload(
         "syntax_errors": orchestrator_res["syntax_errors"],
         "summary_text": orchestrator_res["summary_text"],
         "risk_score": orchestrator_res["risk_score"],
+        "risk_percentage": orchestrator_res["risk_percentage"],
         "findings": orchestrator_res["findings"]
     }
 
@@ -209,31 +224,64 @@ def get_history(
     ]
 
 
+@router.delete("/{scan_id}")
+def delete_scan(scan_id: str, db: Session = Depends(get_db)):
+    """Delete a scan and all its associated findings, chat sessions, and messages."""
+    from models import Finding, ChatSession, ChatMessage, TokenUsage, Fix, FixHistory
+    scan_uuid = uuid.UUID(scan_id)
+    scan = db.query(Scan).filter(Scan.scan_id == scan_uuid).first()
+    if not scan:
+        raise HTTPException(status_code=404, detail="Scan not found")
+    # Delete child records first (order matters for FK constraints)
+    findings = db.query(Finding).filter(Finding.scan_id == scan_uuid).all()
+    for f in findings:
+        db.query(FixHistory).filter(FixHistory.fix_id.in_(
+            db.query(Fix.fix_id).filter(Fix.finding_id == f.finding_id)
+        )).delete(synchronize_session=False)
+        db.query(Fix).filter(Fix.finding_id == f.finding_id).delete(synchronize_session=False)
+    db.query(Finding).filter(Finding.scan_id == scan_uuid).delete(synchronize_session=False)
+    chat_sessions = db.query(ChatSession).filter(ChatSession.scan_id == scan_uuid).all()
+    for cs in chat_sessions:
+        db.query(ChatMessage).filter(ChatMessage.session_id == cs.session_id).delete(synchronize_session=False)
+    db.query(ChatSession).filter(ChatSession.scan_id == scan_uuid).delete(synchronize_session=False)
+    db.query(TokenUsage).filter(TokenUsage.scan_id == scan_uuid).delete(synchronize_session=False)
+    db.delete(scan)
+    db.commit()
+    return {"status": "deleted", "scan_id": scan_id}
+
+
 @router.post("/{scan_id}/fix")
 def apply_fix(scan_id: str, req: FixRequest, db: Session = Depends(get_db)):
-    scan = db.query(Scan).filter(Scan.scan_id == scan_id).first()
+    scan_uuid = uuid.UUID(scan_id)
+    scan = db.query(Scan).filter(Scan.scan_id == scan_uuid).first()
     if not scan:
         raise HTTPException(status_code=404, detail="Scan not found")
         
     from models import Finding
-    finding = db.query(Finding).filter(Finding.id == req.finding_id, Finding.scan_id == scan_id).first()
+    finding_uuid = uuid.UUID(req.finding_id)
+    finding = db.query(Finding).filter(Finding.finding_id == finding_uuid, Finding.scan_id == scan_uuid).first()
     if not finding or not finding.suggested_fix:
         raise HTTPException(status_code=404, detail="Finding or suggested fix not found")
         
-    llm = ChatGroq(model="llama-3.1-8b-instant", temperature=0)
+    llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0)
     prompt = f"""You are an automated code patcher.
-Apply the following fix to the source code.
+Your task is to take the ORIGINAL SOURCE CODE and apply the provided fix to it.
+You MUST output the new, fully patched source code. Do NOT just return the original code.
+Make sure to replace the vulnerable snippet with the suggested fix.
 
-SOURCE CODE:
+=== ORIGINAL SOURCE CODE ===
 {scan.raw_code_ref}
 
-VULNERABLE SNIPPET TO REPLACE:
-{finding.original_code or f"Line {finding.line}"}
+=== FIX TO APPLY ===
+VULNERABLE SNIPPET:
+{finding.original_code or f'Line {finding.line}'}
 
-SUGGESTED FIX TO APPLY:
+SUGGESTED FIX:
 {finding.suggested_fix}
 
-Return ONLY the fully patched source code. No markdown formatting blocks around the code (no ```), no preamble, no explanations. Just the raw code.
+=== INSTRUCTIONS ===
+1. Apply the fix to the ORIGINAL SOURCE CODE.
+2. Return ONLY the raw patched code. Do not include markdown formatting like ```python. Do not include any explanations.
 """
     try:
         response = llm.invoke([
@@ -244,12 +292,69 @@ Return ONLY the fully patched source code. No markdown formatting blocks around 
         if isinstance(raw_content, list):
             raw_content = raw_content[0].get("text", "") if isinstance(raw_content[0], dict) else str(raw_content[0])
         patched_code = str(raw_content).strip()
-        if patched_code.startswith("```"):
-            lines = patched_code.split("\n")
-            if len(lines) > 1 and lines[0].startswith("```"):
-                patched_code = "\n".join(lines[1:])
-            if patched_code.endswith("```"):
-                patched_code = patched_code[:-3]
+        
+        # Strip markdown blocks robustly
+        import re
+        patched_code = re.sub(r"^```[a-zA-Z]*\n", "", patched_code)
+        patched_code = re.sub(r"\n```$", "", patched_code)
+        patched_code = patched_code.strip()
+        
+        return {"patched_code": patched_code}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/{scan_id}/fix-all")
+def apply_fix_all(scan_id: str, db: Session = Depends(get_db)):
+    scan_uuid = uuid.UUID(scan_id)
+    scan = db.query(Scan).filter(Scan.scan_id == scan_uuid).first()
+    if not scan:
+        raise HTTPException(status_code=404, detail="Scan not found")
+        
+    from models import Finding
+    findings = db.query(Finding).filter(Finding.scan_id == scan_uuid, Finding.validation_status != "NO").all()
+    valid_fixes = [f for f in findings if f.suggested_fix]
+    
+    if not valid_fixes:
+        return {"patched_code": scan.raw_code_ref}
+        
+    llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0)
+    
+    fixes_text = ""
+    for f in valid_fixes:
+        fixes_text += f"--- FINDING ---\n"
+        fixes_text += f"ORIGINAL (OR AROUND LINE {f.line}):\n{f.original_code or ''}\n"
+        fixes_text += f"SUGGESTED FIX (REPLACE WITH THIS):\n{f.suggested_fix}\n\n"
+        
+    prompt = f"""You are an automated code patcher.
+Your task is to take the ORIGINAL SOURCE CODE and apply ALL of the following fixes to it simultaneously.
+You MUST output the new, fully patched source code. Do NOT just return the original code.
+
+=== ORIGINAL SOURCE CODE ===
+{scan.raw_code_ref}
+
+=== FIXES TO APPLY ===
+{fixes_text}
+
+=== INSTRUCTIONS ===
+1. Apply ALL of the fixes to the ORIGINAL SOURCE CODE.
+2. Return ONLY the raw patched code. Do not include markdown formatting like ```python. Do not include any explanations.
+"""
+    try:
+        response = llm.invoke([
+            SystemMessage(content="You are a strict code patcher. Output ONLY raw source code."),
+            HumanMessage(content=prompt)
+        ])
+        raw_content = response.content
+        if isinstance(raw_content, list):
+            raw_content = raw_content[0].get("text", "") if isinstance(raw_content[0], dict) else str(raw_content[0])
+        patched_code = str(raw_content).strip()
+        
+        # Strip markdown blocks robustly
+        import re
+        patched_code = re.sub(r"^```[a-zA-Z]*\n", "", patched_code)
+        patched_code = re.sub(r"\n```$", "", patched_code)
+        patched_code = patched_code.strip()
+        
         return {"patched_code": patched_code}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

@@ -3,25 +3,31 @@ from .state import ScanState
 
 def risk_score_node(state: ScanState) -> Dict[str, Any]:
     """
-    Risk Score Node - Calculates an overall risk score from 0-100 based on merged findings.
-    0 = Perfect (No risk), 100 = Maximum Risk.
+    Risk Score Node - Calculates an overall code health score from 0-100 based on merged findings.
+    100 = Perfect (No risk), 0 = Maximum Risk.
+    Also computes risk_percentage: 0% = no risk, 100% = maximum risk.
     """
     findings = state.get("findings", [])
     
-    score = 0
+    penalty = 0
     for f in findings:
+        if f.get("validation_status") == "NO":
+            continue
+            
         sev = str(f.get("severity", "low")).lower()
         if sev == "critical":
-            score += 30
+            penalty += 15
         elif sev == "high":
-            score += 15
+            penalty += 8
         elif sev == "medium":
-            score += 5
+            penalty += 3
         elif sev == "low":
-            score += 1
+            penalty += 1
             
-    # Cap at 100
-    final_score = min(100, score)
+    # Health score starts at 100, floor at 0
+    final_score = max(0, 100 - penalty)
+    # Risk percentage is the inverse: 0% = safe, 100% = critical
+    risk_percentage = min(100, penalty)
     
-    print(f"[Risk Score Node] Calculated score: {final_score}/100")
-    return {"risk_score": final_score}
+    print(f"[Risk Score Node] Health={final_score}/100, Risk={risk_percentage}%")
+    return {"risk_score": final_score, "risk_percentage": risk_percentage}

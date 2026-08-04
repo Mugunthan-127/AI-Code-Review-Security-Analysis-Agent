@@ -17,6 +17,7 @@ public class VulnerableUserService {
     // Expected: severity=high, owasp_type=Hardcoded Credentials, line ~17
     // ────────────────────────────────────────────────────────────────────────
     private static final String DB_PASSWORD = "admin123";
+    @SuppressWarnings("unused")
     private static final String API_SECRET  = "sk-prod-hardcoded-secret-key";
 
     private Connection getConnection() throws SQLException {

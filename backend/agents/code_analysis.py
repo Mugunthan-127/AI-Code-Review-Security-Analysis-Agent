@@ -10,7 +10,9 @@ from services.python_analyzer import run_pylint, run_ruff, run_semgrep as run_py
 from services.java_analyzer import run_pmd, run_checkstyle, run_semgrep as run_java_semgrep
 from langchain_groq import ChatGroq
 from langchain_core.messages import HumanMessage, SystemMessage
+from pydantic import BaseModel, Field
 import json
+from typing import Optional
 
 
 # ---------------------------------------------------------------------------
@@ -181,7 +183,22 @@ def code_analysis_node(state: ScanState) -> Dict[str, Any]:
 
     # Step 2 — LLM enrichment: improve title/explanation quality
     # (does NOT change severity or add new findings)
-    llm = ChatGroq(model="llama-3.1-8b-instant", temperature=0)
+    class CodeQualityFinding(BaseModel):
+        line: Optional[int] = Field(None, description="Line number of the finding")
+        column_num: Optional[int] = Field(None, description="Column number")
+        tool: Optional[str] = Field(None, description="Tool that detected it")
+        rule_id: Optional[str] = Field(None, description="Rule ID")
+        severity: str = Field(description="Severity (critical, high, medium, low)")
+        category: str = Field("code_quality", description="Category")
+        agent_source: str = Field("code_analysis", description="Agent source")
+        title: str = Field(description="Concise, specific title (max 10 words)")
+        explanation: str = Field(description="2-4 sentences explaining the issue clearly")
+
+    class CodeQualityFindingsList(BaseModel):
+        findings: List[CodeQualityFinding] = Field(description="List of enriched code quality findings")
+
+    llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0)
+    structured_llm = llm.with_structured_output(CodeQualityFindingsList)
 
     prompt = f"""You are an expert Code Quality Reviewer. Below is a list of raw code analysis findings from a static analysis tool run on the following {lang} code.
 
@@ -194,29 +211,16 @@ RAW FINDINGS:
 Your task:
 1. For each finding, improve the 'title' to be concise and descriptive (max 10 words).
 2. Improve the 'explanation' to be clear, developer-friendly, and actionable (2-4 sentences).
-3. Do NOT change 'line', 'column', 'tool', 'rule_id', 'severity', 'category', or 'agent_source'.
+3. Do NOT change 'line', 'column_num', 'tool', 'rule_id', 'severity', 'category', or 'agent_source'.
 4. Do NOT invent new findings or remove existing ones.
-5. Return a JSON array with the exact same number of items.
-
-Return ONLY the JSON array. No markdown, no preamble."""
+"""
 
     try:
-        response = llm.invoke([
-            SystemMessage(content="You return ONLY a valid JSON array. No markdown wrapping, no extra text."),
+        response = structured_llm.invoke([
+            SystemMessage(content="You extract structured code quality findings."),
             HumanMessage(content=prompt)
         ])
-        raw_content = response.content
-        if isinstance(raw_content, list):
-            raw_content = raw_content[0].get("text", "") if isinstance(raw_content[0], dict) else str(raw_content[0])
-        content = str(raw_content).strip()
-        # Strip any accidental markdown fences
-        if content.startswith("```json"):
-            content = content[7:]
-        if content.startswith("```"):
-            content = content[3:]
-        if content.endswith("```"):
-            content = content[:-3]
-        enriched_findings = json.loads(content.strip())
+        enriched_findings = [f.model_dump() for f in response.findings]
         # Safety: ensure agent_source is set on every returned item
         for f in enriched_findings:
             f.setdefault("agent_source", "code_analysis")

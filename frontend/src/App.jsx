@@ -98,9 +98,10 @@ function SecurityAdviceCard({ advice }) {
 }
 
 /* ─── Finding Card ─── */
-function FindingCard({ finding, index, scanId }) {
+function FindingCard({ finding, index, scanId, setCode, setTab, setChatQuery }) {
   const [open, setOpen] = useState(index < 3) // First 3 expanded by default
   const [fixing, setFixing] = useState(false)
+  const [copied, setCopied] = useState(false)
   const isSec = finding.agent_source === 'security_vulnerability'
   const sevMeta = getSevMeta(finding.severity)
 
@@ -115,17 +116,10 @@ function FindingCard({ finding, index, scanId }) {
       });
       if (!res.ok) throw new Error("Fix generation failed");
       const data = await res.json();
-      
-      // Trigger download
-      const blob = new Blob([data.patched_code], { type: 'text/plain' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `patched_file_${finding.id}.txt`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      // Update the editor code and switch tab
+      setCode(data.patched_code);
+      setTab('paste');
+      alert("✅ Code updated in the compiler!");
     } catch (e) {
       alert("Error applying fix: " + e.message);
     } finally {
@@ -191,6 +185,21 @@ function FindingCard({ finding, index, scanId }) {
             <div className="fc-explanation">
               <span className="fc-section-lbl">📋 Explanation</span>
               <p className="fc-explanation-text">{finding.explanation || finding.fix}</p>
+            </div>
+          )}
+
+          {/* Ask the Assistant */}
+          {setChatQuery && (
+            <div style={{ marginTop: '12px', marginBottom: '12px' }}>
+              <button 
+                onClick={(e) => { 
+                  e.stopPropagation(); 
+                  setChatQuery(`Explain this finding: ${finding.title || finding.issue}`);
+                }}
+                style={{ background: 'rgba(14, 165, 233, 0.15)', border: '1px solid rgba(14, 165, 233, 0.3)', padding: '6px 12px', borderRadius: '6px', color: '#38bdf8', cursor: 'pointer', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 'bold' }}
+              >
+                <span>💬</span> Ask the Assistant about this
+              </button>
             </div>
           )}
 
@@ -276,10 +285,27 @@ function FindingCard({ finding, index, scanId }) {
                 {/* Action Buttons */}
                 <div style={{ position: 'absolute', bottom: '8px', right: '8px', display: 'flex', gap: '8px' }}>
                   <button 
-                    onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(finding.suggested_fix || finding.fix); }}
+                    onClick={(e) => { 
+                      e.stopPropagation(); 
+                      const text = finding.suggested_fix || finding.fix;
+                      if (navigator.clipboard && window.isSecureContext) {
+                          navigator.clipboard.writeText(text);
+                      } else {
+                          const ta = document.createElement('textarea');
+                          ta.value = text;
+                          ta.style.position = 'absolute';
+                          ta.style.left = '-9999px';
+                          document.body.appendChild(ta);
+                          ta.select();
+                          document.execCommand('copy');
+                          document.body.removeChild(ta);
+                      }
+                      setCopied(true);
+                      setTimeout(() => setCopied(false), 2000);
+                    }}
                     style={{ background: 'rgba(255,255,255,0.1)', border: 'none', padding: '4px 8px', borderRadius: '4px', color: 'var(--txt-muted)', cursor: 'pointer', fontSize: '0.8rem' }}
                   >
-                    📋 Copy
+                    {copied ? "✅ Copied!" : "📋 Copy"}
                   </button>
                   <button 
                     onClick={(e) => { e.stopPropagation(); handleApplyFix(); }}
@@ -296,6 +322,92 @@ function FindingCard({ finding, index, scanId }) {
       )}
     </div>
   )
+}
+
+/* ─── Global Fix Section ─── */
+function GlobalFixSection({ scanId, setCode, setTab }) {
+  const [generating, setGenerating] = useState(false);
+  const [patchedCode, setPatchedCode] = useState(null);
+
+  const generateFullCode = async () => {
+    if (!scanId) return;
+    setGenerating(true);
+    try {
+      const res = await fetch(`http://127.0.0.1:8000/api/v1/submit/${scanId}/fix-all`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (!res.ok) throw new Error("Failed to generate full corrected code.");
+      const data = await res.json();
+      setPatchedCode(data.patched_code);
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const handleAutoFix = () => {
+    if (!patchedCode) return;
+    setCode(patchedCode);
+    setTab('paste');
+    alert("✅ Code automatically pasted to compiler view!");
+  };
+
+  return (
+    <div className="global-fix-section" style={{ marginTop: '24px', background: 'rgba(16, 185, 129, 0.05)', border: '1px solid rgba(16, 185, 129, 0.2)', borderRadius: '12px', padding: '20px' }}>
+      <h3 style={{ margin: '0 0 12px 0', color: '#10b981', display: 'flex', alignItems: 'center', gap: '8px' }}>
+        ✨ After Analysis: Full Corrected Code
+      </h3>
+      <p style={{ color: 'var(--txt-muted)', fontSize: '0.9rem', marginBottom: '16px', lineHeight: '1.4' }}>
+        Generate a single unified file containing all the fixes for the issues found during analysis.
+      </p>
+      
+      {!patchedCode ? (
+        <button 
+          onClick={generateFullCode}
+          disabled={generating}
+          style={{ background: '#10b981', color: 'black', padding: '10px 16px', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', opacity: generating ? 0.7 : 1 }}
+        >
+          {generating ? 'Generating Code...' : '🚀 Generate Full Corrected Code'}
+        </button>
+      ) : (
+        <div style={{ position: 'relative' }}>
+          <pre className="fc-code" style={{ borderLeft: '3px solid #10b981', paddingBottom: '40px', maxHeight: '400px', overflowY: 'auto' }}>
+            <code>{patchedCode}</code>
+          </pre>
+          <div style={{ position: 'absolute', bottom: '8px', right: '8px', display: 'flex', gap: '8px' }}>
+            <button 
+              onClick={() => {
+                  if (navigator.clipboard && window.isSecureContext) {
+                      navigator.clipboard.writeText(patchedCode);
+                  } else {
+                      const ta = document.createElement('textarea');
+                      ta.value = patchedCode;
+                      ta.style.position = 'absolute';
+                      ta.style.left = '-9999px';
+                      document.body.appendChild(ta);
+                      ta.select();
+                      document.execCommand('copy');
+                      document.body.removeChild(ta);
+                  }
+                  alert("Copied to clipboard!");
+              }}
+              style={{ background: 'rgba(255,255,255,0.1)', border: 'none', padding: '6px 12px', borderRadius: '4px', color: 'var(--txt-muted)', cursor: 'pointer', fontSize: '0.85rem' }}
+            >
+              📋 Copy
+            </button>
+            <button 
+              onClick={handleAutoFix}
+              style={{ background: '#10b981', border: 'none', padding: '6px 16px', borderRadius: '4px', color: '#000', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.9rem' }}
+            >
+              🪄 Auto Fix (Paste to Compiler)
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 /* ─── Agent Stats Panel (Visual Dashboard) ─── */
@@ -330,6 +442,14 @@ function AgentStats({ findings, riskScore, history, scanId }) {
     }
   }
 
+  // Calculate Health Grade
+  let healthGrade = 'F';
+  let gradeColor = '#ef4444';
+  if (riskScore >= 90) { healthGrade = 'A'; gradeColor = '#10b981'; }
+  else if (riskScore >= 80) { healthGrade = 'B'; gradeColor = '#34d399'; }
+  else if (riskScore >= 70) { healthGrade = 'C'; gradeColor = '#fbbf24'; }
+  else if (riskScore >= 60) { healthGrade = 'D'; gradeColor = '#f59e0b'; }
+
   // Visual Bars Helper
   const renderBlocks = (count) => {
     if (count === 0) return <span style={{color: 'var(--txt-muted)'}}>0</span>;
@@ -337,7 +457,24 @@ function AgentStats({ findings, riskScore, history, scanId }) {
   };
 
   return (
-    <div className="agent-stats">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      
+      {/* Code Health Score Banner */}
+      {riskScore !== undefined && riskScore !== null && (
+        <div style={{ background: 'rgba(255,255,255,0.03)', padding: '16px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div>
+            <div style={{ fontSize: '0.9rem', color: 'var(--txt-muted)', textTransform: 'uppercase', letterSpacing: '1px' }}>Overall Code Health</div>
+            <div style={{ fontSize: '2.5rem', fontWeight: 'bold', color: gradeColor, lineHeight: '1' }}>{healthGrade} <span style={{ fontSize: '1rem', color: 'var(--txt-muted)' }}>({riskScore}/100)</span></div>
+          </div>
+          {trendText && (
+            <div style={{ fontSize: '0.85rem', color: trendColor, background: 'rgba(0,0,0,0.2)', padding: '6px 12px', borderRadius: '20px' }}>
+              {trendText}
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="agent-stats">
 
       {/* Category Charts */}
       <div className="agent-stat-card agent-stat-sec">
@@ -374,6 +511,7 @@ function AgentStats({ findings, riskScore, history, scanId }) {
           <span className="ast-count" style={{ color: '#34d399' }}>{licCount}</span>
           <span className="ast-label">License</span>
         </div>
+      </div>
       </div>
     </div>
   )
@@ -420,7 +558,7 @@ function HistoryItem({ item }) {
             <span className="hi-src" title={`Source: ${source}`}>{srcIcon}</span>
           </div>
           <span className={`hi-status ${ok ? 'hi-ok' : isFailed ? 'hi-fail' : 'hi-warn'}`}>
-            {ok ? '✓ Passed' : isFailed ? '✗ Failed' : '⚠ Unknown'}
+            {ok ? '✓ Passed' : status === 'rejected' ? '⚠ Rejected' : isFailed ? '✗ Failed' : '⚠ Unknown'}
           </span>
         </div>
         <div className="hi-right">
@@ -454,10 +592,24 @@ export default function App() {
   const [secAdvice,   setSecAdvice]   = useState([])
   const [filterAgent, setFilterAgent] = useState('all')   // 'all' | 'security_vulnerability' | 'code_analysis'
   const [filterSev,   setFilterSev]   = useState('all')   // 'all' | 'critical' | 'high' | 'medium' | 'low'
+  const [chatQuery,   setChatQuery]   = useState('')
+  const [dragOver,    setDragOver]    = useState(false)
+  const [scanStage,   setScanStage]   = useState('')
 
   const sessionId = getSessionId()
-  const rawFindings = result?.findings ?? result?.syntax_errors ?? []
-  const summary     = result?.summary_text
+  const allFindings = result?.findings ?? result?.syntax_errors ?? []
+  const rawFindings = allFindings.filter(f => f.validation_status !== 'NO')
+  const falsePositives = allFindings.filter(f => f.validation_status === 'NO')
+  
+  let parsedSummary = null;
+  if (result?.summary_text) {
+    try {
+      parsedSummary = JSON.parse(result.summary_text);
+    } catch (e) {
+      parsedSummary = { executive_overview: result.summary_text, severity_breakdown: {}, prioritized_findings: [] };
+    }
+  }
+  
   const scanId      = result?.scan_id
   const riskScore   = result?.risk_score
   const isValid     = (result?.status === 'validated' || result?.status === 'completed') && rawFindings.length === 0
@@ -485,9 +637,21 @@ export default function App() {
       alert("Please enter code.");
       return;
     }
-    setLoading(true); setResult(null); setFilterAgent('all'); setFilterSev('all')
+    setLoading(true); setResult(null); setFilterAgent('all'); setFilterSev('all'); setScanStage('Validating syntax…')
     try {
       let res
+      // Start stage progression
+      const stages = [
+        { text: 'Validating syntax…', delay: 0 },
+        { text: 'Running Security Agent…', delay: 2000 },
+        { text: 'Running Code Quality Agent…', delay: 4000 },
+        { text: 'Analysing Complexity…', delay: 6000 },
+        { text: 'Merging findings…', delay: 9000 },
+        { text: 'Generating fixes…', delay: 12000 },
+        { text: 'Computing risk score…', delay: 15000 },
+        { text: 'Writing PR summary…', delay: 18000 },
+      ]
+      const timers = stages.map(s => setTimeout(() => setScanStage(s.text), s.delay))
       if (tab === 'paste') {
         res = await fetch('http://127.0.0.1:8000/api/v1/submit/paste', {
           method: 'POST',
@@ -507,9 +671,11 @@ export default function App() {
       const data = await res.json()
       setResult(data)
       setSecAdvice(data.security_advice ?? [])
+      setScanStage('')
       fetchHistory()
     } catch {
       setResult({ status: 'error', message: 'Cannot reach backend server.', findings: [] })
+      setScanStage('')
     }
     setLoading(false)
   }
@@ -580,12 +746,29 @@ export default function App() {
                 />
               </div>
             ) : (
-              <label className="drop-zone">
+              <label
+                className={`drop-zone ${dragOver ? 'drop-zone-over' : ''}`}
+                onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+                onDragLeave={() => setDragOver(false)}
+                onDrop={e => {
+                  e.preventDefault()
+                  setDragOver(false)
+                  const droppedFile = e.dataTransfer.files?.[0]
+                  if (droppedFile) {
+                    const ext = droppedFile.name.split('.').pop()?.toLowerCase()
+                    if (ext === 'py' || ext === 'java') {
+                      setFile(droppedFile)
+                    } else {
+                      alert('Unsupported file type. Please upload .py or .java files.')
+                    }
+                  }
+                }}
+              >
                 <input id="file-upload" type="file" accept=".py,.java" style={{ display: 'none' }}
                   onChange={e => e.target.files?.[0] && setFile(e.target.files[0])} />
-                <span className="dz-ico">📁</span>
-                <strong className="dz-title">Drop your code file here</strong>
-                <span className="dz-hint">Supports .py and .java files</span>
+                <span className="dz-ico">{dragOver ? '⬇️' : '📁'}</span>
+                <strong className="dz-title">{dragOver ? 'Drop it here!' : 'Drag & drop your code file here'}</strong>
+                <span className="dz-hint">Supports .py and .java files · Click to browse</span>
                 {file && <span className="dz-sel">✓ {file.name}</span>}
               </label>
             )}
@@ -608,15 +791,23 @@ export default function App() {
               </button>
             </div>
 
-            {/* Parallel execution indicator */}
+            {/* Animated Progress Bar with Stage Labels */}
             {loading && (
-              <div className="parallel-indicator" style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '16px' }}>
-                <div style={{ display: 'flex', justifyContent: 'center', gap: '16px', flexWrap: 'wrap' }}>
+              <div className="scan-progress" style={{ padding: '16px' }}>
+                <div className="progress-bar-track">
+                  <div className="progress-bar-fill" />
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'center', gap: '16px', marginTop: '12px', flexWrap: 'wrap' }}>
                   <div className="par-lane"><div className="par-dot par-dot-active" /><span>Code Quality</span></div>
                   <div className="par-lane"><div className="par-dot par-dot-active" /><span>Security</span></div>
                   <div className="par-lane"><div className="par-dot par-dot-active" /><span>Complexity</span></div>
                   <div className="par-lane"><div className="par-dot par-dot-active" /><span>Dependency</span></div>
                 </div>
+                {scanStage && (
+                  <div style={{ textAlign: 'center', marginTop: '8px', color: 'var(--primary)', fontSize: '0.9rem', fontWeight: 'bold', animation: 'pulse 1.5s ease-in-out infinite' }}>
+                    {scanStage}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -687,16 +878,46 @@ export default function App() {
                   <AgentStats findings={rawFindings} riskScore={riskScore} history={history} scanId={scanId} />
 
                   {/* PR Summary */}
-                  {summary && (
-                    <div className="pr-summary-box">
-                      <div className="pr-summary-hd">
-                        <span>📝</span>
-                        <span>PR Summary</span>
-                        <span className="pr-summary-sub">AI-generated review narrative</span>
+                  {parsedSummary && (
+                    <div className="pr-summary-box" style={{ background: 'rgba(255,255,255,0.03)', padding: '20px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.1)' }}>
+                      <div className="pr-summary-hd" style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '12px', marginBottom: '16px' }}>
+                        <span style={{ fontSize: '1.2rem', marginRight: '8px' }}>📝</span>
+                        <span style={{ fontWeight: 'bold', fontSize: '1.1rem' }}>Executive PR Summary</span>
                       </div>
-                      <div className="pr-summary-body">{summary}</div>
+                      
+                      <div style={{ marginBottom: '16px', lineHeight: '1.5', color: 'var(--txt-main)' }}>
+                        <strong>Overview:</strong> {parsedSummary.executive_overview}
+                      </div>
+
+                      {parsedSummary.prioritized_findings && parsedSummary.prioritized_findings.length > 0 && (
+                        <div>
+                          <strong style={{ color: 'var(--txt-muted)' }}>Top Priorities:</strong>
+                          <ul style={{ listStyleType: 'none', paddingLeft: 0, marginTop: '8px' }}>
+                            {parsedSummary.prioritized_findings.map((pf, idx) => (
+                              <li key={idx} style={{ marginBottom: '12px', background: 'rgba(0,0,0,0.2)', padding: '10px', borderRadius: '8px' }}>
+                                <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '4px' }}>
+                                  <span className={`fc-badge`} style={{ padding: '2px 6px', fontSize: '0.7rem', background: 'rgba(255,255,255,0.1)' }}>{pf.severity.toUpperCase()}</span>
+                                  <strong>{pf.title}</strong>
+                                  {pf.fix_time_estimate && (
+                                    <span style={{ marginLeft: 'auto', fontSize: '0.75rem', color: '#60a5fa', background: 'rgba(59,130,246,0.1)', padding: '2px 8px', borderRadius: '12px', border: '1px solid rgba(59,130,246,0.2)' }}>⏱ {pf.fix_time_estimate}</span>
+                                  )}
+                                </div>
+                                <div style={{ fontSize: '0.9rem', color: 'var(--txt-muted)' }}>{pf.recommendation}</div>
+                              </li>
+                            ))}
+                          </ul>
+                          {parsedSummary.total_estimated_fix_time && (
+                            <div style={{ textAlign: 'right', fontSize: '0.9rem', color: '#60a5fa', fontWeight: 'bold', marginTop: '8px', padding: '8px 12px', background: 'rgba(59,130,246,0.08)', borderRadius: '8px', border: '1px solid rgba(59,130,246,0.15)' }}>
+                              ⏱ Total Estimated Fix Time: {parsedSummary.total_estimated_fix_time}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
+
+                  {/* Global Auto Fix Section */}
+                  <GlobalFixSection scanId={scanId} setCode={setCode} setTab={setTab} />
 
                   {/* Filter Bar */}
                   <div className="filter-bar">
@@ -747,14 +968,40 @@ export default function App() {
                               title: f.title || f.issue,
                               suggested_fix: f.suggested_fix || f.fix,
                             }}
+                            setCode={setCode}
+                            setTab={setTab}
+                            setChatQuery={setChatQuery}
                           />
                         ))
                       : <div className="no-match">No findings match the current filters.</div>
                     }
                   </div>
 
+                  {/* False Positives Section */}
+                  {falsePositives.length > 0 && (
+                    <div style={{ marginTop: '24px' }}>
+                      <h3 style={{ color: 'var(--txt-muted)', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '8px', marginBottom: '16px' }}>False Positives ({falsePositives.length})</h3>
+                      <div className="fc-stack" style={{ opacity: 0.7 }}>
+                        {falsePositives.map((f, i) => (
+                          <FindingCard
+                            key={`fp-${i}`}
+                            index={3}
+                            scanId={scanId}
+                            finding={{
+                              ...f,
+                              title: f.title || f.issue,
+                              suggested_fix: f.suggested_fix || f.fix,
+                            }}
+                            setCode={setCode}
+                            setTab={setTab}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Chat UI */}
-                  {scanId && <ChatUI scanId={scanId} sessionId={sessionId} />}
+                  {scanId && <ChatUI scanId={scanId} sessionId={sessionId} externalQuery={chatQuery} setExternalQuery={setChatQuery} />}
                 </div>
 
               ) : (
