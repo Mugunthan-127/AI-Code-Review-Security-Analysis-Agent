@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import Editor from '@monaco-editor/react'
 import ChatUI from './ChatUI'
 import KBTester from './KBTester'
+import ReportSection from './ReportSection'
 
 /* ─── Robust Automatic Language Detector ─── */
 export function detectLanguage(sourceCode = '', fileName = '') {
@@ -751,7 +752,7 @@ function fmtDate(iso) {
 }
 
 /* ─── History Item ─── */
-function HistoryItem({ item, onLoadInScanner, onDeleteScan, onExportReport, setChatQuery, setCode, setLang, setTab, setView }) {
+function HistoryItem({ item, onLoadInScanner, onDeleteScan, onExportReport, setChatQuery, setCode, setTab, setView }) {
   const [open, setOpen] = useState(false)
   const [details, setDetails] = useState(null)
   const [loadingDetails, setLoadingDetails] = useState(false)
@@ -866,6 +867,17 @@ function HistoryItem({ item, onLoadInScanner, onDeleteScan, onExportReport, setC
           <div className="hist-card-actions">
             <button
               className="hist-btn-load"
+              title="View Full Audit Report"
+              style={{ background: 'linear-gradient(135deg, #0ea5e9, #2563eb)', color: '#fff' }}
+              onClick={(e) => {
+                e.stopPropagation()
+                setView('report')
+              }}
+            >
+              📊 Report
+            </button>
+            <button
+              className="hist-btn-load"
               title="Load into Scanner Workspace"
               onClick={(e) => {
                 e.stopPropagation()
@@ -882,7 +894,7 @@ function HistoryItem({ item, onLoadInScanner, onDeleteScan, onExportReport, setC
             </button>
             <button
               className="hist-btn-export"
-              title="Export Report"
+              title="Export Markdown Report"
               onClick={(e) => {
                 e.stopPropagation()
                 onExportReport(item.scan_id)
@@ -976,7 +988,7 @@ function HistoryItem({ item, onLoadInScanner, onDeleteScan, onExportReport, setC
                   <div className="hist-code-container">
                     <div className="hist-code-header">
                       <span className="hist-code-meta">
-                        {lang.toUpperCase()} Source File · {rawCode.length} characters
+                        {lang.toUpperCase()} Source File · {rawCode.length} characters ({rawCode.split('\n').length} lines)
                       </span>
                       <div className="hist-code-btns">
                         <button
@@ -997,9 +1009,18 @@ function HistoryItem({ item, onLoadInScanner, onDeleteScan, onExportReport, setC
                         </button>
                       </div>
                     </div>
-                    <pre className="hist-code-block">
-                      <code>{rawCode || '// No code stored for this scan.'}</code>
-                    </pre>
+                    <div className="hist-full-code-block" style={{ maxHeight: '420px', overflowY: 'auto' }}>
+                      {rawCode ? (
+                        rawCode.split('\n').map((lineStr, lineIdx) => (
+                          <div key={lineIdx} className="hist-code-line">
+                            <span className="hist-line-num">{lineIdx + 1}</span>
+                            <span className="hist-line-txt">{lineStr || ' '}</span>
+                          </div>
+                        ))
+                      ) : (
+                        <div style={{ padding: '16px', color: 'var(--txt-muted)' }}>// No source code stored for this scan</div>
+                      )}
+                    </div>
                   </div>
                 </div>
               )}
@@ -1061,7 +1082,6 @@ function HistorySection({
   onExportReport,
   setChatQuery,
   setCode,
-  setLang,
   setTab,
   setView
 }) {
@@ -1271,7 +1291,6 @@ function HistorySection({
               onExportReport={onExportReport}
               setChatQuery={setChatQuery}
               setCode={setCode}
-              setLang={setLang}
               setTab={setTab}
               setView={setView}
             />
@@ -1485,6 +1504,9 @@ export default function App() {
           <button id="nav-scanner" className={`hdr-pill ${view === 'scanner' ? 'hdr-pill-active' : ''}`} onClick={() => setView('scanner')}>
             <span>🛡️</span> Scanner Studio
           </button>
+          <button id="nav-reports" className={`hdr-pill ${view === 'report' ? 'hdr-pill-active' : ''}`} onClick={() => setView('report')}>
+            <span>📊</span> Audit Reports
+          </button>
           <button id="nav-kb" className={`hdr-pill ${view === 'kb' ? 'hdr-pill-active' : ''}`} onClick={() => setView('kb')}>
             <span>📚</span> Knowledge Base
           </button>
@@ -1497,6 +1519,18 @@ export default function App() {
       {/* ══ MAIN VIEW ══ */}
       {view === 'kb' ? (
         <KBTester />
+      ) : view === 'report' ? (
+        <ReportSection
+          currentResult={result}
+          history={history}
+          histLoading={histLoading}
+          fetchHistory={fetchHistory}
+          onLoadInScanner={handleLoadInScanner}
+          onExportReport={handleExportReport}
+          setView={setView}
+          setCode={setCode}
+          setTab={setTab}
+        />
       ) : view === 'scanner' ? (
       <main className="app-grid">
 
@@ -1774,6 +1808,15 @@ export default function App() {
                   <div className="iok-cert-badge">
                     <span>🛡️ Verified Clean Code · Grade A+ (100/100)</span>
                   </div>
+                  <div style={{ marginTop: '16px' }}>
+                    <button
+                      className="hist-footer-launch-btn"
+                      style={{ maxWidth: '320px', margin: '0 auto' }}
+                      onClick={() => setView('report')}
+                    >
+                      📊 View Formal Audit Certificate
+                    </button>
+                  </div>
                 </div>
 
               ) : rawFindings.length > 0 ? (
@@ -1980,7 +2023,6 @@ export default function App() {
           onExportReport={handleExportReport}
           setChatQuery={setChatQuery}
           setCode={setCode}
-          setLang={setLang}
           setTab={setTab}
           setView={setView}
         />
