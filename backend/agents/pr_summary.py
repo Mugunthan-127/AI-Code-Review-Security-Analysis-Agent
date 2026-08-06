@@ -26,7 +26,7 @@ def pr_summary_node(state: ScanState) -> Dict[str, Any]:
     
     if not valid_findings:
         empty_summary = {
-            "executive_overview": "No issues found. The code looks solid and is ready to merge!",
+            "executive_overview": "No security vulnerabilities or code quality issues were detected. The application follows secure coding practices.",
             "severity_breakdown": {"critical": 0, "high": 0, "medium": 0, "low": 0},
             "prioritized_findings": [],
             "total_estimated_fix_time": "0 min"

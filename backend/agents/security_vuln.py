@@ -1,10 +1,6 @@
-"""
-Security Vulnerability Agent — Milestone 2
-Scans submitted code for OWASP-standard vulnerabilities.
-Classifies each finding by OWASP type, CWE ID, severity, and exact location.
-Uses RAG-grounded LLM enrichment to validate and explain each finding.
-"""
+import os
 import json
+import dotenv
 from typing import Dict, Any, List, Optional
 from .state import ScanState
 from services.python_analyzer import run_bandit, run_semgrep as run_python_semgrep
@@ -14,6 +10,8 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 from services.rag import retrieve
 from database import SessionLocal
+
+dotenv.load_dotenv()
 
 
 # ---------------------------------------------------------------------------
@@ -221,6 +219,9 @@ def security_vuln_node(state: ScanState) -> Dict[str, Any]:
                 grouped[key]["rule_id"] = f.get("rule_id")
                 
     raw_findings = list(grouped.values())
+
+    if not raw_findings:
+        return {"security_findings": []}
 
     # Tag agent source on all raw findings
     for f in raw_findings:

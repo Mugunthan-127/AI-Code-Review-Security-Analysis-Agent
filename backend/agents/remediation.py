@@ -20,6 +20,7 @@ def remediation_node(state: ScanState) -> Dict[str, Any]:
     to each finding. Works on both code quality and security findings.
     """
     code = state["code"]
+    lang = state.get("language", "python")
     findings = state.get("findings", [])
 
     if not findings:
@@ -29,17 +30,37 @@ def remediation_node(state: ScanState) -> Dict[str, Any]:
     rag_contexts = []
     try:
         for f in findings:
-            query = f.get("rule_id") or f.get("title") or "secure coding practices"
-            chunks = retrieve(db, query, k=1)
-            for c in chunks:
-                rag_contexts.append(f"[{c.source_name}]: {c.chunk_text}")
+            agent_src = f.get("agent_source", "")
+            category = f.get("category", "")
+            
+            # Security findings query vulnerability knowledge base
+            if agent_src == "security_vulnerability" or f.get("cwe_id") or f.get("owasp_type") or category == "security":
+                query = f.get("cwe_id") or f.get("owasp_type") or f.get("rule_id") or f.get("title") or "security vulnerability"
+                chunks = retrieve(db, query, k=1, language=lang)
+                for c in chunks:
+                    if getattr(c, 'score', 1.0) >= -2.0:  # Valid relevant chunk
+                        rag_contexts.append(f"[{c.source_name}]: {c.chunk_text}")
+            # Maintainability / Code Quality query clean code guidelines
+            elif category == "maintainability" or agent_src == "complexity":
+                query = f"maintainability clean code {f.get('title', '')}"
+                chunks = retrieve(db, query, k=1, language=lang)
+                for c in chunks:
+                    # Do NOT attach OWASP vulnerability docs to maintainability/complexity findings
+                    if not c.source_name.startswith("owasp_"):
+                        rag_contexts.append(f"[{c.source_name}]: {c.chunk_text}")
+            else:
+                query = f.get("rule_id") or f.get("title") or "code quality"
+                chunks = retrieve(db, query, k=1, language=lang)
+                for c in chunks:
+                    if not c.source_name.startswith("owasp_"):
+                        rag_contexts.append(f"[{c.source_name}]: {c.chunk_text}")
     except Exception as e:
         print(f"[Remediation RAG Error] {e}")
     finally:
         db.close()
         
     rag_contexts = list(set(rag_contexts))
-    kb_context_str = "\n\n".join(rag_contexts) if rag_contexts else "No KB context available."
+    kb_context_str = "\n\n".join(rag_contexts) if rag_contexts else "No specific KB context available."
 
     class RemediatedFinding(BaseModel):
         line: Optional[int] = Field(None, description="Line number of the finding")
@@ -55,7 +76,7 @@ def remediation_node(state: ScanState) -> Dict[str, Any]:
         validation_status: Optional[str] = Field(None, description="YES, NO, or MAYBE")
         title: str = Field(description="Title")
         explanation: str = Field(description="Explanation")
-        grounding_source: Optional[str] = Field(None, description="KB source filename if relevant")
+        grounding_source: Optional[str] = Field(None, description="KB source filename if relevant, or null if no KB article applies")
         confidence_score: Optional[str] = Field(None, description="Confidence percentage")
         cvss_score: Optional[float] = Field(None, description="CVSS v3 score")
         original_code: Optional[str] = Field(None, description="The exact vulnerable snippet from the SOURCE CODE")
@@ -67,8 +88,8 @@ def remediation_node(state: ScanState) -> Dict[str, Any]:
     llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0)
     structured_llm = llm.with_structured_output(RemediationFindingsList)
 
-    prompt = f"""You are a senior Code Remediation Expert. 
-I will provide source code and a list of findings (security vulnerabilities and code quality issues).
+    prompt = f"""You are a senior Principal Engineer and Code Remediation Expert.
+I will provide source code ({lang}) and a list of findings (security vulnerabilities and code quality issues).
 
 SOURCE CODE:
 {code}
@@ -76,24 +97,22 @@ SOURCE CODE:
 FINDINGS:
 {json.dumps(findings, indent=2)}
 
-SECURITY KNOWLEDGE BASE CONTEXT:
+SECURITY / CLEAN CODE KNOWLEDGE BASE CONTEXT:
 {kb_context_str}
 
-For EACH finding:
-1. Extract the 'original_code', which is the exact vulnerable snippet from the SOURCE CODE.
-2. Add a 'suggested_fix' field containing a complete, optimized, and efficient code snippet that fully resolves the issue.
-   - Use the same language as the source code.
-   - Provide the complete updated function, class, or logical block instead of just a minimal line fix, ensuring it is efficient and highly optimized.
-   - Prefer idiomatic, production-quality code.
-3. Rewrite the 'explanation' field to provide a detailed, best-practice explanation based on the SECURITY KNOWLEDGE BASE CONTEXT provided.
-4. Set the 'grounding_source' field to the exact bracketed source name (e.g., 'owasp_a01.md') from the KB context that you used to form the explanation.
-5. Do NOT change any other fields ('line', 'severity', 'agent_source', 'owasp_type', etc.).
-6. Return the SAME number of findings as input.
+CRITICAL REMEDIATION GUIDELINES:
+1. **Java Resource Management**: In Java, ALWAYS use and preserve Java 7+ `try-with-resources` (`try (AutoCloseable res = ...) {{ ... }}`) for all AutoCloseable resources (Connection, PreparedStatement, Statement, ResultSet, Streams, Readers, Writers). NEVER replace `try-with-resources` with legacy manual `try ... finally {{ res.close(); }}` blocks.
+2. **Security Fixes**: Fix vulnerabilities with industry best practices (e.g. parameterized PreparedStatements for SQLi, safe process execution, strong crypto like SHA-256/bcrypt).
+3. **Maintainability / Complexity**: When simplifying complex methods, extract clean helper functions or use early return guard clauses. Do NOT degrade resource management or exception safety.
+4. **Original Code Snippet**: Extract the exact vulnerable or problematic snippet into 'original_code'.
+5. **Suggested Fix**: Provide a complete, production-ready, highly optimized code block in 'suggested_fix'.
+6. **Grounding Source**: Set 'grounding_source' to the exact bracketed filename (e.g. 'owasp_a03.md' or 'java_secure_coding.md') ONLY IF the KB context is directly relevant to this issue. For complexity or general maintainability findings where no specific KB document matches, set 'grounding_source' to null. NEVER assign an OWASP security vulnerability document (such as crypto failures or injection) to a complexity or formatting finding.
+7. Return the EXACT same number of findings as the input list.
 """
 
     try:
         response = structured_llm.invoke([
-            SystemMessage(content="You extract structured findings with remediation."),
+            SystemMessage(content="You extract structured findings with high-quality, idiomatic remediations adhering to modern language best practices."),
             HumanMessage(content=prompt)
         ])
         enriched = [f.model_dump(exclude_none=True) for f in response.findings]
