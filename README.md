@@ -1,4 +1,4 @@
-# 🤖 AI Code Review & Security Analysis Agent
+# 🛡️ Development of Smart Code Inspection Platform with Vulnerability Detection System
 
 <div align="center">
 
@@ -22,7 +22,7 @@
 
 Traditional static code analyzers (such as standard linters or rules-based scanners) often overwhelm developers with false positives, lack contextual awareness of modern application design, and fail to provide actionable, idiomatic fixes.
 
-The **AI Code Review & Security Analysis Agent** bridges the gap between static analysis and generative AI by orchestrating a **parallel multi-agent workflow** built on **LangGraph**. When code is submitted (via direct editor paste or file upload in Python or Java), specialized parallel agents analyze syntax, detect code smells and design anti-patterns, identify OWASP Top 10 vulnerabilities, evaluate cyclomatic complexity, and check dependencies. 
+The **Smart Code Inspection Platform with Vulnerability Detection System** bridges the gap between static analysis and generative AI by orchestrating a **parallel multi-agent workflow** built on **LangGraph**. When code is submitted (via direct editor paste or file upload in Python or Java), specialized parallel agents analyze syntax, detect code smells and design anti-patterns, identify OWASP Top 10 vulnerabilities, evaluate cyclomatic complexity, and check dependencies. 
 
 Findings are merged, deduplicated, and passed through a **Retrieval-Augmented Generation (RAG)** pipeline backed by **ChromaDB** and re-ranked using a cross-encoder model. The system delivers:
 - Precise vulnerability explanations grounded in certified security standards (OWASP, CWE, CERT, NIST).

@@ -1477,7 +1477,7 @@ export default function App() {
             </div>
           </div>
           <div>
-            <h1 className="hdr-h1">AI Code Review & <span>Security Studio</span></h1>
+            <h1 className="hdr-h1">Smart Code Inspection Platform with <span>Vulnerability Detection System</span></h1>
             <p className="hdr-tag">Multi-Agent Static Analysis · RAG Knowledge Base · Instant Fixes</p>
           </div>
         </div>

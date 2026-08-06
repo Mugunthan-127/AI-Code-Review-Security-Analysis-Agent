@@ -15,7 +15,7 @@ if os.path.exists(env_path):
                 key, val = line.split('=', 1)
                 os.environ.setdefault(key.strip(), val.strip())
 
-app = FastAPI(title="AI Code Review & Security Analysis Agent – Milestone 3")
+app = FastAPI(title="Development of Smart Code Inspection Platform with Vulnerability Detection System")
 
 app.add_middleware(
     CORSMiddleware,
