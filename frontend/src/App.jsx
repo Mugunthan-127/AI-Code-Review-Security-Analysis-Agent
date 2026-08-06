@@ -1286,7 +1286,7 @@ function HistorySection({
 export default function App() {
   const [view,        setView]        = useState('scanner')
   const [tab,         setTab]         = useState('paste')
-  const [code,        setCode]        = useState(PRESETS[0].code)
+  const [code,        setCode]        = useState('')
   const [file,        setFile]        = useState(null)
   const [loading,     setLoading]     = useState(false)
   const [result,      setResult]      = useState(null)
