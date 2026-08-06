@@ -23,19 +23,37 @@ class FixRequest(BaseModel):
     finding_id: str
 
 def guess_language(code: str) -> str:
-    """Guess if the code is Java or Python based on simple heuristics.
-    Raises HTTPException(400) if both Java and Python markers are detected (mixed code).
-    """
-    java_indicators = ['public class ', 'import java.', 'System.out.print', 'public static void main', 'package ', 'import javax.']
-    python_indicators = ['def ', 'import os', 'import sys', 'print(', 'from ', 'elif ', 'except ', '#!/usr/bin/env python', '#!/usr/bin/python']
-    has_java = any(ind in code for ind in java_indicators)
-    has_python = any(ind in code for ind in python_indicators)
-    if has_java and has_python:
-        raise HTTPException(
-            status_code=400,
-            detail="Mixed code detected: the submission contains both Java and Python markers. Please submit only one language at a time."
-        )
-    if has_java:
+    """Guess if the code is Java or Python based on robust weighted heuristics."""
+    if not code:
+        return LanguageEnum.python.value
+
+    java_indicators = [
+        'public class ', 'class ', 'import java.', 'System.out.', 'System.err.',
+        'public static void main', 'package ', 'import javax.', 'private ',
+        'protected ', 'throws Exception', 'PreparedStatement', 'DriverManager',
+        'SQLException', 'try (', '@Override', 'String[] args'
+    ]
+    python_indicators = [
+        'def ', 'import os', 'import sys', 'import re', 'import json', 'print(',
+        'from ', 'elif ', 'except ', '#!/usr/bin/env python', '#!/usr/bin/python',
+        'self.', '__init__', 'lambda ', 'async def ', 'import subprocess', 'import pickle'
+    ]
+
+    java_score = sum(2 for ind in java_indicators if ind in code)
+    python_score = sum(2 for ind in python_indicators if ind in code)
+
+    # Structural markers
+    java_score += code.count(';') * 0.1
+    java_score += code.count('{') * 0.2
+    python_score += code.count(':') * 0.1
+
+    if java_score >= python_score and java_score > 0:
+        return LanguageEnum.java.value
+    elif python_score > java_score:
+        return LanguageEnum.python.value
+
+    # Fallback
+    if ';' in code or '{' in code:
         return LanguageEnum.java.value
     return LanguageEnum.python.value
 

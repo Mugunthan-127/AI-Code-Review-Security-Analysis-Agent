@@ -3,6 +3,72 @@ import Editor from '@monaco-editor/react'
 import ChatUI from './ChatUI'
 import KBTester from './KBTester'
 
+/* ─── Robust Automatic Language Detector ─── */
+export function detectLanguage(sourceCode = '', fileName = '') {
+  if (fileName) {
+    const ext = fileName.split('.').pop()?.toLowerCase()
+    if (ext === 'java') return 'java'
+    if (ext === 'py') return 'python'
+  }
+  if (!sourceCode || typeof sourceCode !== 'string') return 'python'
+
+  const javaIndicators = [
+    /\bpublic\s+(?:class|interface|enum)\b/,
+    /\bimport\s+java\./,
+    /\bimport\s+javax\./,
+    /\bSystem\.(?:out|err)\./,
+    /\bpublic\s+static\s+void\s+main\b/,
+    /\bpackage\s+[\w.]+;/,
+    /\b(?:private|protected|public)\s+[\w<>[\]]+\s+\w+\s*\(/,
+    /\bthrows\s+\w+Exception\b/,
+    /\bPreparedStatement\b/,
+    /\bDriverManager\b/,
+    /\bSQLException\b/,
+    /\btry\s*\(/,
+    /\bString\[\]\s*args\b/,
+    /@Override/,
+    /@SpringBootApplication/,
+  ]
+
+  const pythonIndicators = [
+    /\bdef\s+\w+\s*\(/,
+    /\bimport\s+(?:os|sys|re|json|math|typing|subprocess|pickle|requests|fastapi|pydantic)\b/,
+    /\bfrom\s+[\w.]+\s+import\b/,
+    /\belif\b/,
+    /\bexcept\s*(?:\w+)?(?:\s+as\s+\w+)?:\s*$/,
+    /\bif\s+__name__\s*==\s*['"]__main__['"]\s*:/,
+    /\bprint\s*\(/,
+    /^\s*#.*$/m,
+    /\bself\.\w+/,
+    /\blambda\b/,
+    /\basync\s+def\b/,
+    /\b__init__\b/,
+  ]
+
+  let javaScore = 0
+  let pyScore = 0
+
+  for (const regex of javaIndicators) {
+    if (regex.test(sourceCode)) javaScore += 3
+  }
+  for (const regex of pythonIndicators) {
+    if (regex.test(sourceCode)) pyScore += 3
+  }
+
+  // Structural syntax cues
+  const semicolonLines = (sourceCode.match(/;\s*$/gm) || []).length
+  const curlyBraceLines = (sourceCode.match(/[{}]/gm) || []).length
+  if (semicolonLines > 0) javaScore += semicolonLines * 0.5
+  if (curlyBraceLines > 0) javaScore += curlyBraceLines * 0.5
+
+  const colonDefs = (sourceCode.match(/:\s*$/gm) || []).length
+  if (colonDefs > 0) pyScore += colonDefs * 0.3
+
+  if (javaScore >= pyScore && javaScore > 0) return 'java'
+  if (pyScore > javaScore) return 'python'
+  return (semicolonLines > 0 || curlyBraceLines > 0) ? 'java' : 'python'
+}
+
 /* ─── Sample Preset Codes for Instant Testing ─── */
 const PRESETS = [
   {
@@ -923,7 +989,6 @@ function HistoryItem({ item, onLoadInScanner, onDeleteScan, onExportReport, setC
                           className="hist-btn-code-action primary"
                           onClick={() => {
                             setCode(rawCode)
-                            setLang(lang)
                             setTab('paste')
                             setView('scanner')
                           }}
@@ -1222,7 +1287,6 @@ export default function App() {
   const [view,        setView]        = useState('scanner')
   const [tab,         setTab]         = useState('paste')
   const [code,        setCode]        = useState(PRESETS[0].code)
-  const [lang,        setLang]        = useState('java')
   const [file,        setFile]        = useState(null)
   const [loading,     setLoading]     = useState(false)
   const [result,      setResult]      = useState(null)
@@ -1236,6 +1300,9 @@ export default function App() {
   const [dragOver,    setDragOver]    = useState(false)
   const [scanStage,   setScanStage]   = useState('')
   const [copiedCode,  setCopiedCode]  = useState(false)
+
+  // Real-time automatic language detection
+  const detectedLang = tab === 'upload' && file ? detectLanguage('', file.name) : detectLanguage(code)
 
   const sessionId = getSessionId()
   const allFindings = result?.findings ?? result?.syntax_errors ?? []
@@ -1284,9 +1351,6 @@ export default function App() {
 
   const handleLoadInScanner = (scanData) => {
     setCode(scanData.raw_code || scanData.code || '')
-    if (scanData.language) {
-      setLang(scanData.language.toLowerCase())
-    }
     setTab('paste')
     setResult(scanData)
     setSecAdvice(scanData.security_advice || [])
@@ -1320,9 +1384,8 @@ export default function App() {
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)
-      URL.revokeObjectURL(url)
-    } catch (err) {
-      alert("Export failed: " + err.message)
+    } catch (e) {
+      alert("Error exporting report: " + e.message)
     }
   }
 
@@ -1367,7 +1430,7 @@ export default function App() {
         res = await fetch('http://127.0.0.1:8000/api/v1/submit/paste', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ code, language: lang, session_id: sessionId }),
+          body: JSON.stringify({ code, language: detectedLang, session_id: sessionId }),
         })
       } else {
         if (!file) { alert('Select a file first.'); setLoading(false); return }
@@ -1453,20 +1516,13 @@ export default function App() {
                 </button>
               </div>
 
-              {/* Language Selector Chips */}
-              <div className="studio-lang-chips">
-                <button
-                  className={`studio-lang-btn ${lang === 'java' ? 'active java' : ''}`}
-                  onClick={() => setLang('java')}
-                >
-                  ☕ Java
-                </button>
-                <button
-                  className={`studio-lang-btn ${lang === 'python' ? 'active python' : ''}`}
-                  onClick={() => setLang('python')}
-                >
-                  🐍 Python
-                </button>
+              {/* Dynamic Auto-Detected Language Pill Badge */}
+              <div className="studio-auto-badge" title="Language is automatically detected from your code syntax in real-time">
+                <span className="sab-pulse-dot" />
+                <span className="sab-label">Language:</span>
+                <span className={`sab-pill ${detectedLang}`}>
+                  {detectedLang === 'java' ? '☕ Java (Auto)' : '🐍 Python (Auto)'}
+                </span>
               </div>
             </div>
 
@@ -1480,7 +1536,6 @@ export default function App() {
                     className="preset-chip"
                     onClick={() => {
                       setCode(preset.code)
-                      setLang(preset.lang)
                       setTab('paste')
                     }}
                     title="Load sample snippet into Monaco Editor"
@@ -1521,7 +1576,7 @@ export default function App() {
                 <div className="editor-box">
                   <Editor
                     height="100%"
-                    language={lang}
+                    language={detectedLang}
                     theme="vs-dark"
                     value={code}
                     onChange={v => setCode(v ?? '')}
@@ -1554,7 +1609,6 @@ export default function App() {
                     const ext = droppedFile.name.split('.').pop()?.toLowerCase()
                     if (ext === 'py' || ext === 'java') {
                       setFile(droppedFile)
-                      setLang(ext === 'py' ? 'python' : 'java')
                     } else {
                       alert('Unsupported file type. Please upload .py or .java files.')
                     }
@@ -1566,8 +1620,6 @@ export default function App() {
                     const f = e.target.files?.[0]
                     if (f) {
                       setFile(f)
-                      const ext = f.name.split('.').pop()?.toLowerCase()
-                      if (ext === 'py' || ext === 'java') setLang(ext === 'py' ? 'python' : 'java')
                     }
                   }} />
                 <div className="dz-icon-circle">
