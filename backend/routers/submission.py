@@ -199,10 +199,11 @@ async def submit_upload(
 @router.get("/history")
 def get_history(
     session_id: str,
-    limit: int = 20,
+    limit: int = 50,
     db: Session = Depends(get_db)
 ):
-    """Return the last `limit` scans for a given browser session, newest first."""
+    """Return the last `limit` scans for a given browser session, newest first with finding metrics."""
+    from models import Finding
     scans = (
         db.query(Scan)
         .filter(Scan.session_id == session_id)
@@ -210,18 +211,102 @@ def get_history(
         .limit(limit)
         .all()
     )
-    return [
-        {
+    results = []
+    for s in scans:
+        findings = db.query(Finding).filter(Finding.scan_id == s.scan_id).all()
+        findings_count = len(findings)
+        critical_count = sum(1 for f in findings if (f.severity or "").lower() == "critical")
+        high_count = sum(1 for f in findings if (f.severity or "").lower() == "high")
+        medium_count = sum(1 for f in findings if (f.severity or "").lower() == "medium")
+        low_count = sum(1 for f in findings if (f.severity or "").lower() == "low")
+        sec_count = sum(1 for f in findings if (f.agent_source or "") == "security_vulnerability" or (f.category or "") == "security")
+        qual_count = sum(1 for f in findings if (f.agent_source or "") == "code_analysis" or (f.category or "") == "code_quality")
+        
+        results.append({
             "scan_id": str(s.scan_id),
             "language": s.language.value if s.language else None,
             "source_type": s.source_type.value if s.source_type else None,
             "status": s.status.value if s.status else None,
             "created_at": s.created_at.isoformat() if s.created_at else None,
-            "snippet": (s.raw_code_ref or "")[:120],
+            "snippet": (s.raw_code_ref or "")[:300],
+            "raw_code": s.raw_code_ref,
+            "code_lines": len((s.raw_code_ref or "").splitlines()),
             "risk_score": s.risk_score,
-        }
-        for s in scans
-    ]
+            "risk_percentage": 100 - s.risk_score if s.risk_score is not None else 0,
+            "findings_count": findings_count,
+            "critical_count": critical_count,
+            "high_count": high_count,
+            "medium_count": medium_count,
+            "low_count": low_count,
+            "security_count": sec_count,
+            "quality_count": qual_count,
+            "summary_text": s.summary_text
+        })
+    return results
+
+
+@router.get("/scan/{scan_id}")
+@router.get("/{scan_id}")
+def get_scan_details(scan_id: str, db: Session = Depends(get_db)):
+    """Return full scan data including raw code, all findings, executive summary, and fixes."""
+    from models import Finding
+    scan_uuid = uuid.UUID(scan_id)
+    scan = db.query(Scan).filter(Scan.scan_id == scan_uuid).first()
+    if not scan:
+        raise HTTPException(status_code=404, detail="Scan not found")
+        
+    findings = db.query(Finding).filter(Finding.scan_id == scan_uuid).all()
+    findings_list = []
+    for f in findings:
+        detected_by_val = ["Static Analysis"]
+        if f.detected_by:
+            try:
+                if f.detected_by.startswith("["):
+                    detected_by_val = json.loads(f.detected_by)
+                else:
+                    detected_by_val = [f.detected_by]
+            except Exception:
+                detected_by_val = [f.detected_by]
+
+        findings_list.append({
+            "finding_id": str(f.finding_id),
+            "agent_source": f.agent_source or "security_vulnerability",
+            "line": f.line,
+            "column_num": f.column_num,
+            "tool": f.tool,
+            "rule_id": f.rule_id,
+            "severity": f.severity or "low",
+            "cvss_score": f.cvss_score,
+            "category": f.category or "security",
+            "owasp_type": f.owasp_type,
+            "title": f.title or "Issue Detected",
+            "explanation": f.explanation or "",
+            "suggested_fix": f.suggested_fix or "",
+            "cwe_id": f.cwe_id,
+            "grounding_source": f.grounding_source,
+            "confidence_score": f.confidence_score,
+            "detected_by": detected_by_val,
+            "original_code": f.original_code,
+            "validation_status": f.validation_status or "YES",
+            "status": f.status or "OPEN"
+        })
+
+    return {
+        "scan_id": str(scan.scan_id),
+        "session_id": scan.session_id,
+        "language": scan.language.value if scan.language else None,
+        "source_type": scan.source_type.value if scan.source_type else None,
+        "status": scan.status.value if scan.status else None,
+        "raw_code": scan.raw_code_ref,
+        "code": scan.raw_code_ref,
+        "validation_error": scan.validation_error,
+        "summary_text": scan.summary_text,
+        "risk_score": scan.risk_score,
+        "risk_percentage": 100 - scan.risk_score if scan.risk_score is not None else 0,
+        "created_at": scan.created_at.isoformat() if scan.created_at else None,
+        "findings": findings_list,
+        "syntax_errors": []
+    }
 
 
 @router.delete("/{scan_id}")
@@ -248,6 +333,7 @@ def delete_scan(scan_id: str, db: Session = Depends(get_db)):
     db.delete(scan)
     db.commit()
     return {"status": "deleted", "scan_id": scan_id}
+
 
 
 @router.post("/{scan_id}/fix")

@@ -5,11 +5,15 @@ from datetime import datetime
 def update_defect_tracker():
     file_path = "Defect_Tracker_Template_v0_1.xlsx"
     df = pd.DataFrame({
-        'Sl No': [1, 2, 3, 4, 5, 6, 7, 8],
-        'Submitted By': ['Dev', 'QA', 'QA', 'Frontend Dev', 'QA', 'Security Dev', 'QA', 'Frontend Dev'],
+        'Sl No': list(range(1, 13)),
+        'Submitted By': [
+            'Dev', 'QA', 'QA', 'Frontend Dev', 'QA', 'Security Dev', 
+            'QA', 'Frontend Dev', 'Security Dev', 'Frontend Dev', 'Security Dev', 'Backend Dev'
+        ],
         'Submitted Date': [
             '2026-06-08', '2026-06-16', '2026-06-20', '2026-06-30',
-            '2026-07-03', '2026-07-06', '2026-07-09', '2026-07-11'
+            '2026-07-03', '2026-07-06', '2026-07-09', '2026-07-11',
+            '2026-07-14', '2026-07-16', '2026-07-18', '2026-07-20'
         ],
         'Description': [
             'SpotBugs executable throws Errno 13 Permission Denied in Docker Linux runtime.',
@@ -19,19 +23,26 @@ def update_defect_tracker():
             'Python AST parser crashed with SyntaxError on Windows CRLF (\\r\\n) multi-line strings.',
             'Duplicate findings displayed in UI when both Bandit and Pylint reported on the same line.',
             'LLM remediation occasionally returned markdown conversational commentary wrapping code.',
-            'Chat modal history reset when switching tabs between Code Editor and KB Tester.'
+            'Chat modal history reset when switching tabs between Code Editor and KB Tester.',
+            'Excessive nesting depth false positive (counted 5 levels of nesting on Java try-with-resources with while loop).',
+            'Scan history displayed truncated 2-line snippets without expanding full code and finding remediation details.',
+            'Java remediation suggested manual resource management (connection.close()) instead of modern try-with-resources.',
+            'Scan history delete operation failed to cascade-delete foreign key child records (ChatSession, TokenUsage, FixHistory).'
         ],
         'Detected Sprint': [
             'Sprint 2', 'Sprint 2', 'Sprint 2', 'Sprint 3',
-            'Sprint 1', 'Sprint 2', 'Sprint 3', 'Sprint 3'
+            'Sprint 1', 'Sprint 2', 'Sprint 3', 'Sprint 3',
+            'Sprint 4', 'Sprint 4', 'Sprint 4', 'Sprint 4'
         ],
         'Assigned To': [
             'DevSecOps Lead', 'Backend Dev', 'Security Dev', 'Fullstack Dev',
-            'Backend Dev', 'AI Eng', 'AI Eng', 'Frontend Dev'
+            'Backend Dev', 'AI Eng', 'AI Eng', 'Frontend Dev',
+            'Backend Dev', 'Frontend Dev', 'AI Eng', 'Backend Dev'
         ],
         'Type Of Defect': [
             'Configuration', 'Logical', 'Logical', 'Network',
-            'Data Parsing', 'Logical', 'AI / Integration', 'UI / State'
+            'Data Parsing', 'Logical', 'AI / Integration', 'UI / State',
+            'False Positive', 'UI / UX', 'Remediation Logic', 'Database / Integrity'
         ],
         'Action Taken': [
             'Added explicit RUN chmod -R +x /opt/spotbugs /opt/pmd in Dockerfile.',
@@ -41,13 +52,18 @@ def update_defect_tracker():
             'Added .replace("\\r\\n", "\\n") sanitization in validation.py.',
             'Implemented line-and-rule matching deduplication in LangGraph orchestrator.py Merge Node.',
             'Enforced strict regex extraction of ```python / ```java blocks in remediation.py.',
-            'Moved active chat session state to root App.jsx component to persist across tab transitions.'
+            'Moved active chat session state to root App.jsx component to persist across tab transitions.',
+            'Refactored compute_nesting_depth in java_analyzer.py to identify and ignore try-with-resources declarations from nesting depth counter.',
+            'Redesigned Scan History page into full Audit Dashboard with detail retrieval (/scan/{id}), source code viewer, metric cards, and filters.',
+            'Enforced try-with-resources in Java remediation prompts and secure fix generators for auto-closable JDBC connections.',
+            'Implemented cascading foreign key cleanup in DELETE /api/v1/submit/{scan_id} across all related tables.'
         ],
         'Action Taken Date': [
             '2026-06-09', '2026-06-17', '2026-06-21', '2026-06-30',
-            '2026-07-03', '2026-07-07', '2026-07-09', '2026-07-11'
+            '2026-07-03', '2026-07-07', '2026-07-09', '2026-07-11',
+            '2026-07-15', '2026-07-17', '2026-07-19', '2026-07-21'
         ],
-        'Status(Open/Closed)': ['Closed'] * 8,
+        'Status(Open/Closed)': ['Closed'] * 12,
         'Remarks': [
             'Resolved & verified in container build.',
             'Catches 100% of dynamic code injections.',
@@ -56,7 +72,11 @@ def update_defect_tracker():
             'Fixed across both Python and Java parsers.',
             'Highest severity is retained; duplicate items merged.',
             'Clean, compilable code inserted directly into Monaco.',
-            'Full conversation history preserved during review.'
+            'Full conversation history preserved during review.',
+            'Proper try-with-resources code passes with 0 false positive nesting warnings.',
+            'Users can inspect full code, view all findings, copy code, and reload into editor.',
+            'Remediated code complies with modern Java SE best practices.',
+            'Database integrity preserved with clean zero-orphan deletion.'
         ]
     })
 
@@ -68,7 +88,7 @@ def update_defect_tracker():
 def update_unit_test_plan():
     file_path = "Unit_Test_Plan_v0_1.xlsx"
     df = pd.DataFrame({
-        'Sl: No:': list(range(1, 27)),
+        'Sl: No:': list(range(1, 31)),
         'Test Case Name': [
             'TC-01: Backend Health Check',
             'TC-02: Python Code Submission (Paste)',
@@ -95,7 +115,11 @@ def update_unit_test_plan():
             'TC-23: RAG Knowledge Retrieval',
             'TC-24: Automated Fix Patch Generation',
             'TC-25: Context-Aware AI Chat',
-            'TC-26: Markdown Report Export'
+            'TC-26: Markdown Report Export',
+            'TC-27: Java Try-with-Resources Nesting Complexity',
+            'TC-28: Scan History Details API (/scan/{id})',
+            'TC-29: Scan History Cascade Deletion (DELETE /{id})',
+            'TC-30: History Search & Multi-Filter Querying'
         ],
         'Test Procedure': [
             'Send GET request to /health endpoint',
@@ -123,7 +147,11 @@ def update_unit_test_plan():
             'Send query "How to prevent SQL Injection in Java" to /api/kb/retrieve',
             'Call POST /api/v1/submit/{scan_id}/fix with a SQLi finding ID',
             'Ask chatbot "Why is MD5 insecure for passwords?" for an active scan',
-            'Call GET /api/v1/reports/{scan_id}/export/markdown'
+            'Call GET /api/v1/reports/{scan_id}/export/markdown',
+            'Submit Java code utilizing try-with-resources with an inner while loop',
+            'Send GET request to /api/v1/submit/scan/{scan_id}',
+            'Send DELETE request to /api/v1/submit/{scan_id}',
+            'Execute search query and filter by Java and Clean status in History UI'
         ],
         'Condition to be tested': [
             'Server is running and DB engine is initialized',
@@ -151,7 +179,11 @@ def update_unit_test_plan():
             'ChromaDB retrieves chunks from owasp_a03_injection.md',
             'LLM replaces concatenation with PreparedStatement parameterization',
             'Chatbot pulls RAG context and explains collision attacks and salting',
-            'Backend synthesizes PR summary, metrics, and finding tables'
+            'Backend synthesizes PR summary, metrics, and finding tables',
+            'Nesting counter ignores resource declarations; nesting depth calculated as 1 or 2',
+            'Full raw_code, all findings, executive summary, and severity counts returned',
+            'Scan and all child records (findings, chat messages, fix records) are removed',
+            'History card list reacts in real time and shows filtered subset accurately'
         ],
         'Expected Result': [
             'HTTP 200 with {"status": "ok"}',
@@ -179,9 +211,13 @@ def update_unit_test_plan():
             'Top-3 chunks returned with similarity score > 0.65',
             'Clean, compilable patched code block returned',
             'Accurate, conversational guidance citing OWASP/NIST standards',
-            'Formatted .md document returned with Content-Type: text/markdown'
+            'Formatted .md document returned with Content-Type: text/markdown',
+            '0 Excessive Nesting findings reported; 100/100 Health Score if no other bugs',
+            'HTTP 200 with complete scan details, raw code, and all findings',
+            'HTTP 200 with {"status": "deleted", "scan_id": scan_id}',
+            'Instant UI update displaying only matching scans'
         ],
-        'Actual Result': ['Pass'] * 26
+        'Actual Result': ['Pass'] * 30
     })
 
     with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
@@ -194,9 +230,9 @@ def update_agile_template():
 
     # 1. Product Backlog
     df_pb = pd.DataFrame({
-        'Planned Sprint': [1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3],
-        'Actual Sprint': [1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3],
-        'US ID': ['US-01', 'US-02', 'US-03', 'US-04', 'US-05', 'US-06', 'US-07', 'US-08', 'US-09', 'US-10', 'US-11'],
+        'Planned Sprint': [1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4],
+        'Actual Sprint': [1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4],
+        'US ID': ['US-01', 'US-02', 'US-03', 'US-04', 'US-05', 'US-06', 'US-07', 'US-08', 'US-09', 'US-10', 'US-11', 'US-12'],
         'User Story Description': [
             'As a developer, I want a Code Submission interface (direct paste & file upload) so I can submit Python and Java code for automated review.',
             'As a developer, I want instant syntax validation (AST / javalang) so that malformed or mixed-language code is rejected before heavy analysis.',
@@ -208,19 +244,35 @@ def update_agile_template():
             'As a developer, I want an automated Remediation Agent (Groq Llama 3.3 + RAG) that generates drop-in code fixes with one-click editor updates.',
             'As a tech lead, I want a PR Summary Agent that calculates a Code Health Score (0-100) and estimates developer remediation time.',
             'As a developer, I want an interactive, context-aware AI Chat Assistant to ask follow-up questions about flagged vulnerabilities.',
-            'As a security auditor, I want to test ChromaDB semantic retrieval directly in the UI and export scan findings as Markdown/PDF reports.'
+            'As a security auditor, I want to test ChromaDB semantic retrieval directly in the UI and export scan findings as Markdown/PDF reports.',
+            'As a developer, I want a complete Scan History & Audit Dashboard to inspect full historical source code, review previous findings, and reload scans.'
         ],
-        'MOSCOW': ['Must Have', 'Must Have', 'Must Have', 'Must Have', 'Must Have', 'Must Have', 'Should Have', 'Must Have', 'Must Have', 'Must Have', 'Could Have'],
-        'Dependency': ['None', 'US-01', 'None', 'US-01', 'US-01', 'US-04, US-05', 'US-06', 'US-03, US-06', 'US-08', 'US-03, US-08', 'US-03, US-09'],
-        'Assignee': ['Fullstack Dev', 'Backend Dev', 'AI/Data Eng', 'Backend Dev', 'Security Dev', 'AI Eng', 'QA Eng', 'AI Eng', 'Backend Dev', 'Fullstack Dev', 'Frontend Dev'],
-        'Status': ['Completed'] * 11
+        'MOSCOW': ['Must Have', 'Must Have', 'Must Have', 'Must Have', 'Must Have', 'Must Have', 'Should Have', 'Must Have', 'Must Have', 'Must Have', 'Could Have', 'Must Have'],
+        'Dependency': ['None', 'US-01', 'None', 'US-01', 'US-01', 'US-04, US-05', 'US-06', 'US-03, US-06', 'US-08', 'US-03, US-08', 'US-03, US-09', 'US-01, US-06'],
+        'Assignee': ['Fullstack Dev', 'Backend Dev', 'AI/Data Eng', 'Backend Dev', 'Security Dev', 'AI Eng', 'QA Eng', 'AI Eng', 'Backend Dev', 'Fullstack Dev', 'Frontend Dev', 'Fullstack Dev'],
+        'Status': ['Completed'] * 12
     })
 
     # 2. Sprint Backlog
     df_sb = pd.DataFrame({
-        'Sprint': ['Sprint 1', 'Sprint 1', 'Sprint 1', 'Sprint 1', 'Sprint 1', 'Sprint 2', 'Sprint 2', 'Sprint 2', 'Sprint 2', 'Sprint 2', 'Sprint 3', 'Sprint 3', 'Sprint 3', 'Sprint 3', 'Sprint 3', 'Sprint 3'],
-        'US ID': ['US-01', 'US-01', 'US-02', 'US-03', 'US-03', 'US-04', 'US-05', 'US-06', 'US-06', 'US-07', 'US-08', 'US-08', 'US-09', 'US-10', 'US-10', 'US-11'],
-        'Task ID': ['T-01.1', 'T-01.2', 'T-02.1', 'T-03.1', 'T-03.2', 'T-04.1', 'T-05.1', 'T-06.1', 'T-06.2', 'T-07.1', 'T-08.1', 'T-08.2', 'T-09.1', 'T-10.1', 'T-10.2', 'T-11.1'],
+        'Sprint': [
+            'Sprint 1', 'Sprint 1', 'Sprint 1', 'Sprint 1', 'Sprint 1',
+            'Sprint 2', 'Sprint 2', 'Sprint 2', 'Sprint 2', 'Sprint 2',
+            'Sprint 3', 'Sprint 3', 'Sprint 3', 'Sprint 3', 'Sprint 3', 'Sprint 3',
+            'Sprint 4', 'Sprint 4', 'Sprint 4'
+        ],
+        'US ID': [
+            'US-01', 'US-01', 'US-02', 'US-03', 'US-03',
+            'US-04', 'US-05', 'US-06', 'US-06', 'US-07',
+            'US-08', 'US-08', 'US-09', 'US-10', 'US-10', 'US-11',
+            'US-12', 'US-12', 'US-04'
+        ],
+        'Task ID': [
+            'T-01.1', 'T-01.2', 'T-02.1', 'T-03.1', 'T-03.2',
+            'T-04.1', 'T-05.1', 'T-06.1', 'T-06.2', 'T-07.1',
+            'T-08.1', 'T-08.2', 'T-09.1', 'T-10.1', 'T-10.2', 'T-11.1',
+            'T-12.1', 'T-12.2', 'T-04.2'
+        ],
         'Task Description': [
             'Setup FastAPI gateway, SQLite schema, and REST endpoints',
             'Build Monaco editor React interface and file upload component',
@@ -237,25 +289,35 @@ def update_agile_template():
             'Implement weighted health score algorithm (0-100) and PR summary generator',
             'Build context-aware chat backend with scan memory and RAG retrieval',
             'Design floating Chatbot UI with code block formatting & suggestion chips',
-            'Implement Markdown report exporter and KBTester interactive UI'
+            'Implement Markdown report exporter and KBTester interactive UI',
+            'Build GET /api/v1/submit/scan/{scan_id} and DELETE /{scan_id} cascading endpoints',
+            'Implement interactive History Audit Dashboard with code inspector, metrics, and search',
+            'Refactor Java complexity nesting counter to ignore try-with-resources blocks'
         ],
-        'Estimated Hours': [6.0, 8.0, 5.0, 8.0, 6.0, 8.0, 10.0, 12.0, 6.0, 6.0, 10.0, 7.0, 6.0, 8.0, 7.0, 5.0],
-        'Actual Hours': [5.5, 8.0, 4.5, 9.0, 5.0, 7.5, 11.0, 12.5, 5.5, 6.0, 9.5, 7.0, 5.0, 8.5, 6.5, 4.5],
-        'Assignee': ['Backend Dev', 'Frontend Dev', 'Backend Dev', 'Security Dev', 'AI Eng', 'Backend Dev', 'Security Dev', 'AI Eng', 'AI Eng', 'QA Eng', 'AI Eng', 'Frontend Dev', 'Backend Dev', 'Fullstack Dev', 'Frontend Dev', 'Frontend Dev'],
-        'Status': ['Done'] * 16
+        'Estimated Hours': [6.0, 8.0, 5.0, 8.0, 6.0, 8.0, 10.0, 12.0, 6.0, 6.0, 10.0, 7.0, 6.0, 8.0, 7.0, 5.0, 6.0, 9.0, 4.0],
+        'Actual Hours': [5.5, 8.0, 4.5, 9.0, 5.0, 7.5, 11.0, 12.5, 5.5, 6.0, 9.5, 7.0, 5.0, 8.5, 6.5, 4.5, 5.0, 8.5, 3.5],
+        'Assignee': [
+            'Backend Dev', 'Frontend Dev', 'Backend Dev', 'Security Dev', 'AI Eng',
+            'Backend Dev', 'Security Dev', 'AI Eng', 'AI Eng', 'QA Eng',
+            'AI Eng', 'Frontend Dev', 'Backend Dev', 'Fullstack Dev', 'Frontend Dev', 'Frontend Dev',
+            'Backend Dev', 'Frontend Dev', 'Backend Dev'
+        ],
+        'Status': ['Done'] * 19
     })
 
     # 3. Standup Meeting
     df_standup = pd.DataFrame({
-        'Sprint ': ['Sprint 1', 'Sprint 1', 'Sprint 2', 'Sprint 2', 'Sprint 3', 'Sprint 3'],
-        'Day': ['Day 3', 'Day 8', 'Day 4', 'Day 9', 'Day 2', 'Day 11'],
+        'Sprint ': ['Sprint 1', 'Sprint 1', 'Sprint 2', 'Sprint 2', 'Sprint 3', 'Sprint 3', 'Sprint 4', 'Sprint 4'],
+        'Day': ['Day 3', 'Day 8', 'Day 4', 'Day 9', 'Day 2', 'Day 11', 'Day 3', 'Day 8'],
         'Impediments': [
             'Docker pgvector DB connection latency and setup friction across developer machines.',
             'Windows CRLF line ending differences broke javalang token line numbering.',
             'SpotBugs threw Errno 13 Permission Denied inside container environment.',
             'Bandit missed eval() and exec() when defined as dynamic expressions.',
             'Frontend fetch calls failed with ERR_CONNECTION_REFUSED due to IPv6 localhost resolution on Windows Chrome.',
-            'LLM remediation occasionally returned conversational fluff instead of raw executable code.'
+            'LLM remediation occasionally returned conversational fluff instead of raw executable code.',
+            'Try-with-resources constructs in Java were falsely flagged as excessive nesting depth of 5 levels.',
+            'History view displayed only truncated 2-line code snippets without opening findings or allowing full inspection.'
         ],
         'Action Taken': [
             'Replaced local PostgreSQL requirement with lightweight embedded ChromaDB + SQLite persistence.',
@@ -263,36 +325,42 @@ def update_agile_template():
             'Updated Dockerfile with explicit chmod +x permissions for PMD and SpotBugs CLI binaries.',
             'Added explicit B307 (eval) and B102 (exec) security mapping rules to BANDIT_OWASP_MAP.',
             'Updated Vite proxy and client fetch targets from localhost:8000 to explicit 127.0.0.1:8000.',
-            'Enforced strict JSON schema output formatting and automated code block extraction regex.'
+            'Enforced strict JSON schema output formatting and automated code block extraction regex.',
+            'Enhanced AST visitor in java_analyzer.py to skip try-with-resources declaration headers in nesting counts.',
+            'Implemented interactive History Dashboard with detail API integration, multi-tab code viewer, and search filters.'
         ]
     })
 
     # 4. Retrospection
     df_retro = pd.DataFrame({
-        'SL #': [1, 2, 3],
-        'Sprint #': ['Sprint 1', 'Sprint 2', 'Sprint 3'],
-        'Sprint start date': ['2026-06-01', '2026-06-15', '2026-06-29'],
-        'Sprint end date': ['2026-06-14', '2026-06-28', '2026-07-12'],
-        'Team member name ': ['DevSecOps Team', 'DevSecOps Team', 'DevSecOps Team'],
+        'SL #': [1, 2, 3, 4],
+        'Sprint #': ['Sprint 1', 'Sprint 2', 'Sprint 3', 'Sprint 4'],
+        'Sprint start date': ['2026-06-01', '2026-06-15', '2026-06-29', '2026-07-13'],
+        'Sprint end date': ['2026-06-14', '2026-06-28', '2026-07-12', '2026-07-26'],
+        'Team member name ': ['DevSecOps Team', 'DevSecOps Team', 'DevSecOps Team', 'DevSecOps Team'],
         'Start Doing': [
             'Documenting ground-truth test cases before writing analyzer integrations.',
             'Running static analyzers with strict OWASP rule mappings immediately upon build.',
-            'Cross-Encoder re-ranking on RAG chunks to eliminate LLM hallucination risks.'
+            'Cross-Encoder re-ranking on RAG chunks to eliminate LLM hallucination risks.',
+            'Comprehensive AST rule unit testing to detect edge-case false positives early.'
         ],
         'Stop Doing ': [
             'Relying on heavy external database dependencies for local developer setups.',
             'Hardcoding localhost strings across client and backend configurations.',
-            'Permitting unbounded LLM generation without JSON schema enforcement.'
+            'Permitting unbounded LLM generation without JSON schema enforcement.',
+            'Truncating user code snippets in audit logs without full inspection capabilities.'
         ],
         'Continue Doing ': [
             'Maintaining strict modularity between API gateway, services, and storage.',
             'Parallelizing independent analysis tasks using LangGraph fan-out execution.',
-            'Providing interactive one-click remediation directly in the developer editor.'
+            'Providing interactive one-click remediation directly in the developer editor.',
+            'Continuous UI/UX polishing for developer ergonomics and seamless audit flows.'
         ],
         'Action taken': [
             'Switched to embedded ChromaDB and created standalone validation scripts.',
             'Created automated run_tests.py and converted all fetch URLs to 127.0.0.1.',
-            'Implemented 19-module automated validation suite (run_validation.py).'
+            'Implemented 19-module automated validation suite (run_validation.py).',
+            'Implemented History Audit Dashboard and refined Java AST SAST rule engine.'
         ]
     })
 
